@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Air Guitar Stage Pro</title><link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body><main class="app">
+<video id="video" playsinline muted></video><canvas id="canvas"></canvas><div class="vignette"></div>
+<header class="topbar glass"><div><p class="eyebrow">CODING FOR FUN · LIVE EXPERIENCE</p><h1>AIR GUITAR <span>OPERA EDITION</span></h1></div><div id="status" class="status"><i></i> Prêt</div></header>
+<section id="welcome" class="welcome glass"><div class="logo">🎸</div><p class="eyebrow">A CALM VIRTUAL GUITAR EXPERIENCE</p><h2>Play the silence. Feel the music.</h2><p>Created and presented by Oussama Mdemagh. This interactive experience transforms simple hand movements into a calm, elegant guitar performance.</p><button id="startBtn">ENTRER SUR SCÈNE</button><small>No musical experience is required. Follow the light and enjoy the performance.</small></section>
+<section id="hud" class="hud hidden"><div class="chord glass"><span>POWER CHORD</span><strong id="note">—</strong></div><div class="meter glass"><span>ÉNERGIE DU SHOW</span><div class="track"><div id="power"></div></div></div><div class="score glass"><span>STAGE SCORE</span><strong id="score">0</strong></div><div id="combo" class="combo">PLACE AUX MAINS</div><div id="timer" class="timer">01:30</div></section>
+<div id="message" class="message">Place les mains sur les repères</div><section id="finalScreen" class="final-screen hidden"><div class="final-card glass"><p class="eyebrow">PERFORMANCE TERMINÉE</p><h2>BRAVO !</h2><div id="finalScore" class="final-score">0</div><p id="finalText">Une magnifique performance.</p><button id="restartBtn">REJOUER LE SHOW</button></div></section><button id="soundBtn" class="sound hidden">🔊 Son activé</button>
+</main><script src="app.js"></script></body></html>
