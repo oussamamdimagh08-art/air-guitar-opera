@@ -14,6 +14,11 @@
   --muted: #8ea0b7;
 }
 
+
+/* =====================================================
+   GENERAL RESET
+===================================================== */
+
 * {
   box-sizing: border-box;
 }
@@ -22,11 +27,12 @@ html,
 body {
   width: 100%;
   height: 100%;
+
   margin: 0;
   overflow: hidden;
 
-  background: var(--background);
   color: var(--white);
+  background: var(--background);
 
   font-family:
     Inter,
@@ -49,7 +55,9 @@ button {
 }
 
 
-/* START SCREEN */
+/* =====================================================
+   START SCREEN
+===================================================== */
 
 .start-screen {
   position: fixed;
@@ -63,26 +71,68 @@ button {
 
   background:
     radial-gradient(
-      circle at 20% 20%,
-      rgba(36, 124, 255, 0.28),
+      circle at 18% 20%,
+      rgba(36, 124, 255, 0.3),
       transparent 34%
     ),
     radial-gradient(
-      circle at 80% 70%,
-      rgba(158, 85, 255, 0.25),
+      circle at 82% 72%,
+      rgba(158, 85, 255, 0.26),
       transparent 36%
+    ),
+    radial-gradient(
+      circle at 50% 50%,
+      rgba(97, 232, 255, 0.06),
+      transparent 46%
     ),
     #03050a;
 }
 
+
+/* Decorative grid */
+
+.start-screen::before {
+  content: "";
+
+  position: absolute;
+  inset: 0;
+
+  background-image:
+    linear-gradient(
+      rgba(255, 255, 255, 0.025) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.025) 1px,
+      transparent 1px
+    );
+
+  background-size: 44px 44px;
+
+  mask-image:
+    radial-gradient(
+      circle,
+      black,
+      transparent 76%
+    );
+
+  pointer-events: none;
+}
+
 .start-card {
+  position: relative;
+
   width: min(900px, 94vw);
 
   padding: 54px;
 
   text-align: center;
 
-  border: 1px solid rgba(97, 232, 255, 0.25);
+  border:
+    1px solid
+    rgba(97, 232, 255, 0.25);
+
   border-radius: 30px;
 
   background:
@@ -95,6 +145,8 @@ button {
   box-shadow:
     0 35px 120px rgba(0, 0, 0, 0.75),
     0 0 80px rgba(71, 206, 255, 0.08);
+
+  backdrop-filter: blur(18px);
 }
 
 .small-title {
@@ -110,7 +162,9 @@ button {
 .start-card h1 {
   margin: 24px 0 16px;
 
-  font-size: clamp(52px, 9vw, 105px);
+  font-size:
+    clamp(52px, 9vw, 105px);
+
   line-height: 0.9;
   letter-spacing: -5px;
 }
@@ -121,7 +175,8 @@ button {
   color: var(--cyan);
 
   text-shadow:
-    0 0 35px rgba(97, 232, 255, 0.45);
+    0 0 35px
+    rgba(97, 232, 255, 0.45);
 }
 
 .introduction {
@@ -137,7 +192,9 @@ button {
 
 .instructions-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+
+  grid-template-columns:
+    repeat(4, 1fr);
 
   gap: 12px;
 
@@ -147,10 +204,14 @@ button {
 .instructions-grid article {
   padding: 18px 12px;
 
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border:
+    1px solid
+    rgba(255, 255, 255, 0.09);
+
   border-radius: 15px;
 
-  background: rgba(255, 255, 255, 0.035);
+  background:
+    rgba(255, 255, 255, 0.035);
 }
 
 .instructions-grid strong,
@@ -181,6 +242,7 @@ button {
   border-radius: 999px;
 
   color: #03110d;
+
   background:
     linear-gradient(
       90deg,
@@ -191,16 +253,22 @@ button {
   font-weight: 900;
 
   box-shadow:
-    0 13px 45px rgba(69, 232, 157, 0.25);
+    0 13px 45px
+    rgba(69, 232, 157, 0.25);
 
   transition:
     transform 0.2s ease,
-    filter 0.2s ease;
+    filter 0.2s ease,
+    opacity 0.2s ease;
 }
 
 #startButton:hover {
   transform: translateY(-3px);
   filter: brightness(1.08);
+}
+
+#startButton:active {
+  transform: scale(0.98);
 }
 
 #startButton:disabled {
@@ -217,7 +285,9 @@ button {
 }
 
 
-/* EXPERIENCE */
+/* =====================================================
+   EXPERIENCE CONTAINER
+===================================================== */
 
 .experience {
   position: fixed;
@@ -227,6 +297,11 @@ button {
 
   background: #02040a;
 }
+
+
+/* =====================================================
+   VIDEO AND CANVAS LAYERS
+===================================================== */
 
 #cameraVideo,
 #handCanvas,
@@ -251,28 +326,52 @@ button {
     brightness(0.62);
 }
 
-#handCanvas {
-  z-index: 3;
-
-  pointer-events: none;
-}
-
 #effectsCanvas {
   z-index: 2;
 
   pointer-events: none;
 }
 
+#handCanvas {
+  z-index: 3;
 
-/* TOP BAR */
+  pointer-events: none;
+}
+
+
+/* Dark cinematic overlay */
+
+.experience::after {
+  content: "";
+
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+
+  pointer-events: none;
+
+  background:
+    linear-gradient(
+      to bottom,
+      rgba(1, 4, 10, 0.38),
+      transparent 25%,
+      transparent 72%,
+      rgba(1, 4, 10, 0.55)
+    );
+}
+
+
+/* =====================================================
+   TOP BAR
+===================================================== */
 
 .top-bar {
   position: absolute;
   z-index: 10;
 
   top: 20px;
-  left: 24px;
   right: 24px;
+  left: 24px;
 
   display: flex;
   align-items: center;
@@ -298,6 +397,17 @@ button {
 
   box-shadow:
     0 0 17px var(--green);
+
+  animation:
+    livePulse 1.4s
+    ease-in-out infinite;
+}
+
+@keyframes livePulse {
+  50% {
+    opacity: 0.45;
+    transform: scale(0.75);
+  }
 }
 
 .brand strong,
@@ -328,12 +438,16 @@ button {
 .system-status span {
   padding: 9px 12px;
 
-  border: 1px solid rgba(97, 232, 255, 0.25);
+  border:
+    1px solid
+    rgba(97, 232, 255, 0.25);
+
   border-radius: 999px;
 
-  background: rgba(3, 10, 18, 0.76);
-
   color: #a7b7c9;
+
+  background:
+    rgba(3, 10, 18, 0.76);
 
   font-size: 10px;
   font-weight: 800;
@@ -343,7 +457,9 @@ button {
 }
 
 
-/* HAND ZONES */
+/* =====================================================
+   HAND DETECTION ZONES
+===================================================== */
 
 .hand-zone {
   position: absolute;
@@ -354,13 +470,16 @@ button {
 
   width: 30%;
 
-  border: 1px solid rgba(255, 255, 255, 0.13);
+  border:
+    1px solid
+    rgba(255, 255, 255, 0.13);
 
   background:
     rgba(4, 13, 24, 0.26);
 
   box-shadow:
-    inset 0 0 65px rgba(0, 0, 0, 0.4);
+    inset 0 0 65px
+    rgba(0, 0, 0, 0.4);
 
   transition:
     border-color 0.2s ease,
@@ -384,8 +503,10 @@ button {
     rgba(25, 119, 177, 0.17);
 
   box-shadow:
-    inset 0 0 70px rgba(69, 219, 255, 0.13),
-    0 0 45px rgba(69, 219, 255, 0.28);
+    inset 0 0 70px
+    rgba(69, 219, 255, 0.13),
+    0 0 45px
+    rgba(69, 219, 255, 0.28);
 
   transform: scale(1.015);
 }
@@ -397,14 +518,18 @@ button {
     rgba(179, 35, 99, 0.16);
 
   box-shadow:
-    inset 0 0 70px rgba(255, 78, 163, 0.13),
-    0 0 45px rgba(255, 78, 163, 0.25);
+    inset 0 0 70px
+    rgba(255, 78, 163, 0.13),
+    0 0 45px
+    rgba(255, 78, 163, 0.25);
 
   transform: scale(1.015);
 }
 
 
-/* DECORATIVE CORNERS */
+/* =====================================================
+   ZONE CORNERS
+===================================================== */
 
 .zone-corner {
   position: absolute;
@@ -454,11 +579,12 @@ button {
 }
 
 
-/* ZONE CONTENT */
+/* =====================================================
+   ZONE CONTENT
+===================================================== */
 
 .zone-content {
   position: absolute;
-
   inset: 0;
 
   display: flex;
@@ -482,16 +608,26 @@ button {
 .zone-content strong {
   margin: 10px 0 4px;
 
-  font-size: clamp(30px, 4vw, 62px);
+  font-size:
+    clamp(30px, 4vw, 62px);
+
   letter-spacing: -2px;
 }
 
 .left-zone .zone-content strong {
   color: var(--cyan);
+
+  text-shadow:
+    0 0 25px
+    rgba(97, 232, 255, 0.28);
 }
 
 .right-zone .zone-content strong {
   color: var(--pink);
+
+  text-shadow:
+    0 0 25px
+    rgba(255, 78, 163, 0.28);
 }
 
 .zone-content span:last-child {
@@ -502,7 +638,9 @@ button {
 }
 
 
-/* ENERGY BAR */
+/* =====================================================
+   ENERGY BARS
+===================================================== */
 
 .energy-bar {
   position: absolute;
@@ -517,7 +655,8 @@ button {
 
   border-radius: 99px;
 
-  background: rgba(255, 255, 255, 0.08);
+  background:
+    rgba(255, 255, 255, 0.08);
 }
 
 .energy-bar i {
@@ -528,7 +667,8 @@ button {
 
   border-radius: inherit;
 
-  transition: width 0.1s linear;
+  transition:
+    width 0.1s linear;
 }
 
 .left-zone .energy-bar i {
@@ -556,7 +696,9 @@ button {
 }
 
 
-/* CENTER MESSAGE */
+/* =====================================================
+   CENTER MESSAGE
+===================================================== */
 
 .center-message {
   position: absolute;
@@ -565,18 +707,24 @@ button {
   bottom: 24px;
   left: 50%;
 
-  min-width: min(630px, 80vw);
+  min-width:
+    min(630px, 80vw);
 
   padding: 15px 22px;
 
-  border: 1px solid rgba(97, 232, 255, 0.22);
+  border:
+    1px solid
+    rgba(97, 232, 255, 0.22);
+
   border-radius: 16px;
 
-  background: rgba(3, 10, 18, 0.74);
+  background:
+    rgba(3, 10, 18, 0.74);
 
   text-align: center;
 
-  transform: translateX(-50%);
+  transform:
+    translateX(-50%);
 
   backdrop-filter: blur(12px);
 }
@@ -600,7 +748,9 @@ button {
 }
 
 
-/* VOLUME PANEL */
+/* =====================================================
+   VOLUME PANEL
+===================================================== */
 
 .volume-panel {
   position: absolute;
@@ -613,10 +763,14 @@ button {
 
   padding: 14px;
 
-  border: 1px solid rgba(97, 232, 255, 0.2);
+  border:
+    1px solid
+    rgba(97, 232, 255, 0.2);
+
   border-radius: 14px;
 
-  background: rgba(3, 10, 18, 0.72);
+  background:
+    rgba(3, 10, 18, 0.72);
 
   backdrop-filter: blur(12px);
 }
@@ -638,6 +792,8 @@ button {
   width: 100%;
 
   margin: 11px 0 6px;
+
+  accent-color: var(--cyan);
 }
 
 .volume-panel span {
@@ -648,7 +804,9 @@ button {
 }
 
 
-/* ACTION BUTTONS */
+/* =====================================================
+   ACTION BUTTONS
+===================================================== */
 
 .action-buttons {
   position: absolute;
@@ -665,25 +823,41 @@ button {
 .action-buttons button {
   padding: 9px 12px;
 
-  border: 1px solid rgba(97, 232, 255, 0.2);
+  border:
+    1px solid
+    rgba(97, 232, 255, 0.2);
+
   border-radius: 10px;
 
   color: #afbdce;
-  background: rgba(3, 10, 18, 0.72);
+
+  background:
+    rgba(3, 10, 18, 0.72);
 
   font-size: 10px;
   font-weight: 900;
 
   backdrop-filter: blur(12px);
+
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease;
 }
 
 .action-buttons button:hover {
   color: white;
+
   border-color: var(--cyan);
+
+  background:
+    rgba(20, 50, 70, 0.8);
 }
 
 
-/* ERROR */
+/* =====================================================
+   ERROR MESSAGE
+===================================================== */
 
 .error-message {
   position: absolute;
@@ -695,26 +869,37 @@ button {
 
   padding: 14px;
 
-  border: 1px solid var(--red);
+  border:
+    1px solid var(--red);
+
   border-radius: 12px;
 
   color: white;
-  background: rgba(102, 18, 42, 0.92);
+
+  background:
+    rgba(102, 18, 42, 0.92);
 
   text-align: center;
 }
 
 
-/* RESPONSIVE */
+/* =====================================================
+   RESPONSIVE DESIGN
+===================================================== */
 
 @media (max-width: 850px) {
 
   .instructions-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns:
+      1fr 1fr;
   }
 
   .start-card {
     padding: 30px;
+  }
+
+  .start-card h1 {
+    letter-spacing: -3px;
   }
 
   .hand-zone {
@@ -744,6 +929,62 @@ button {
     max-width: 50%;
 
     flex-wrap: wrap;
+  }
+
+  .center-message {
+    min-width: 86vw;
+  }
+
+}
+
+
+@media (max-width: 540px) {
+
+  .start-card {
+    padding: 25px 18px;
+  }
+
+  .instructions-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .instructions-grid article {
+    padding: 11px;
+  }
+
+  .hand-zone {
+    top: 31%;
+    bottom: 26%;
+  }
+
+  .zone-content strong {
+    font-size: 25px;
+  }
+
+  .volume-panel {
+    top: 70px;
+    right: 10px;
+
+    width: 135px;
+  }
+
+  .action-buttons {
+    top: 70px;
+    left: 10px;
+  }
+
+  .action-buttons button {
+    padding: 7px 8px;
+
+    font-size: 8px;
+  }
+
+  .center-message p {
+    font-size: 14px;
+  }
+
+  .center-message small {
+    font-size: 10px;
   }
 
 }
