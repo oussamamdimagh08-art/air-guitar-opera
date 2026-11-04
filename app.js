@@ -1,34 +1,1264 @@
-const $=s=>document.querySelector(s),video=$('#video'),canvas=$('#canvas'),ctx=canvas.getContext('2d');
-const startBtn=$('#startBtn'),welcome=$('#welcome'),hud=$('#hud'),statusEl=$('#status'),noteEl=$('#note'),powerEl=$('#power'),scoreEl=$('#score'),message=$('#message'),soundBtn=$('#soundBtn'),comboEl=$('#combo'),timerEl=$('#timer'),finalScreen=$('#finalScreen'),finalScore=$('#finalScore'),finalText=$('#finalText'),restartBtn=$('#restartBtn');
-let ac,master,comp,reverb,delay,soundOn=true,busy=false,started=false,ended=false,startAt=0,nextBeat=0,step=0,lastX=null,lastFrameAt=0,lastGestureAt=0,energy=.25,score=0,goodMoves=0,smoothed={},particles=[],cameraRef;
-const DURATION=90,BPM=76,BEAT=60/BPM;
-const SONG=[
- {n:'Cmaj7',g:[48,55,59,64,67],b:36},{n:'G/B',g:[47,50,55,59,62],b:35},{n:'Am7',g:[45,52,55,60,64],b:33},{n:'Em7',g:[40,47,50,55,59],b:28},
- {n:'Fmaj7',g:[41,48,52,57,60],b:29},{n:'C/E',g:[40,48,55,60,64],b:28},{n:'Dm7',g:[50,53,57,60,65],b:38},{n:'G6',g:[43,50,55,59,64],b:31}
-];
-function resize(){canvas.width=innerWidth*devicePixelRatio;canvas.height=innerHeight*devicePixelRatio;ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0)}addEventListener('resize',resize);resize();
-function hz(m){return 440*2**((m-69)/12)}
-function impulse(c){const b=c.createBuffer(2,c.sampleRate*3.5,c.sampleRate);for(let k=0;k<2;k++){const d=b.getChannelData(k);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,3.8)}return b}
-function initAudio(){ac=new (window.AudioContext||window.webkitAudioContext)();master=ac.createGain();master.gain.value=.9;comp=ac.createDynamicsCompressor();comp.threshold.value=-24;comp.knee.value=28;comp.ratio.value=3;comp.attack.value=.012;comp.release.value=.32;reverb=ac.createConvolver();reverb.buffer=impulse(ac);delay=ac.createDelay(1);delay.delayTime.value=.39;const fb=ac.createGain(),wet=ac.createGain(),echo=ac.createGain(),dry=ac.createGain();fb.gain.value=.12;wet.gain.value=.19;echo.gain.value=.08;dry.gain.value=.94;delay.connect(fb).connect(delay);comp.connect(dry).connect(master);comp.connect(reverb).connect(wet).connect(master);comp.connect(delay).connect(echo).connect(master);master.connect(ac.destination)}
-// Karplus-Strong style plucked nylon string: filtered noise burst through a resonant delay.
-function nylon(m,t,vol=.12,brightness=.55,len=2.8){const f=hz(m),period=1/f,size=Math.max(2,Math.floor(ac.sampleRate*period)),buf=ac.createBuffer(1,size,ac.sampleRate),d=buf.getChannelData(0);for(let i=0;i<size;i++)d[i]=(Math.random()*2-1)*(1-i/size*.25);const src=ac.createBufferSource(),gain=ac.createGain(),body=ac.createBiquadFilter(),warm=ac.createBiquadFilter();src.buffer=buf;src.loop=true;body.type='bandpass';body.frequency.value=f*2.1;body.Q.value=1.1;warm.type='lowpass';warm.frequency.value=1500+brightness*2700;gain.gain.setValueAtTime(.0001,t);gain.gain.exponentialRampToValueAtTime(vol,t+.012);gain.gain.exponentialRampToValueAtTime(.0001,t+len);src.playbackRate.value=1;src.connect(body).connect(warm).connect(gain).connect(comp);src.start(t);src.stop(t+len+.05);const fundamental=ac.createOscillator(),fg=ac.createGain();fundamental.type='sine';fundamental.frequency.value=f;fg.gain.setValueAtTime(.0001,t);fg.gain.exponentialRampToValueAtTime(vol*.36,t+.02);fg.gain.exponentialRampToValueAtTime(.0001,t+len*.72);fundamental.connect(fg).connect(comp);fundamental.start(t);fundamental.stop(t+len)}
-function pad(m,t,len,vol){const o=ac.createOscillator(),g=ac.createGain(),f=ac.createBiquadFilter();o.type='sine';o.frequency.value=hz(m);f.type='lowpass';f.frequency.value=900;g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(vol,t+.65);g.gain.linearRampToValueAtTime(.0001,t+len);o.connect(f).connect(g).connect(comp);o.start(t);o.stop(t+len+.05)}
-function playBar(c,t){c.g.forEach((m,i)=>nylon(m,t+i*.095,.075+(i===0?.02:0),.38+i*.07,3.1));nylon(c.b,t,.11,.3,3.3);c.g.slice(1,4).forEach(m=>pad(m,t,BEAT*4,.012))}
-function melody(c,t,pos){const seq=[4,2,3,1],m=c.g[seq[pos%4]]+12;nylon(m,t,.045,.72,1.35)}
-function schedule(){if(!ac||ended)return;while(nextBeat<ac.currentTime+.18){const bar=Math.floor(step/4),pos=step%4,c=SONG[bar%SONG.length];if(pos===0){playBar(c,nextBeat);noteEl.textContent=c.n}melody(c,nextBeat,pos);nextBeat+=BEAT;step++}requestAnimationFrame(schedule)}
-function gestureAccent(p){if(!ac||!soundOn)return;const c=SONG[Math.floor(step/4)%SONG.length],t=ac.currentTime;c.g.slice(1,5).forEach((m,i)=>nylon(m+12,t+i*.055,.028+p*.022,.65,1.25))}
-function applause(){if(!ac||!soundOn)return;const t=ac.currentTime,dur=5,b=ac.createBuffer(2,ac.sampleRate*dur,ac.sampleRate);for(let c=0;c<2;c++){const d=b.getChannelData(c);for(let i=0;i<d.length;i++){const x=i/d.length,env=Math.pow(Math.sin(Math.PI*x),.38);d[i]=(Math.random()*2-1)*env*(.14+Math.random()*.12)}}const s=ac.createBufferSource(),f=ac.createBiquadFilter(),g=ac.createGain();s.buffer=b;f.type='bandpass';f.frequency.value=1450;f.Q.value=.35;g.gain.value=.72;s.connect(f).connect(g).connect(comp);s.start(t)}
-function P(p){return{x:(1-p.x)*innerWidth,y:p.y*innerHeight}}function smooth(k,p,a=.72){const q=smoothed[k]||{...p};q.x=q.x*a+p.x*(1-a);q.y=q.y*a+p.y*(1-a);return smoothed[k]=q}
-function line(a,b,c,w=2,blur=14){ctx.save();ctx.strokeStyle=c;ctx.lineWidth=w;ctx.lineCap='round';ctx.shadowBlur=blur;ctx.shadowColor=c;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.restore()}function glow(p,c,r=4){ctx.save();ctx.fillStyle=c;ctx.shadowBlur=24;ctx.shadowColor=c;ctx.beginPath();ctx.arc(p.x,p.y,r,0,7);ctx.fill();ctx.restore()}
-function box(z,c,on){ctx.save();ctx.fillStyle=on?c+'20':'#071027a5';ctx.strokeStyle=on?c:'#67738d';ctx.lineWidth=on?3:1.5;ctx.setLineDash(on?[]:[8,7]);ctx.shadowBlur=on?24:0;ctx.shadowColor=c;ctx.beginPath();ctx.roundRect(z.x,z.y,z.w,z.h,22);ctx.fill();ctx.stroke();ctx.restore()}function text(a,b,x,y,c){ctx.fillStyle=c;ctx.font='900 13px Inter';ctx.fillText(a,x,y);ctx.fillStyle='#b4bdd4';ctx.font='11px Inter';ctx.fillText(b,x,y+19)}
-function hand(lm,c){const q=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];q.forEach(([a,b])=>line(P(lm[a]),P(lm[b]),c,1.8));lm.forEach(p=>glow(P(p),c,2))}
-function burst(p){for(let i=0;i<20;i++)particles.push({x:p.x,y:p.y,vx:(Math.random()-.5)*8,vy:(Math.random()-.5)*8,l:1,h:175+Math.random()*95})}function drawParticles(){for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.x+=p.vx;p.y+=p.vy;p.vx*=.96;p.vy*=.96;p.l-=.035;if(p.l<=0)particles.splice(i,1);else glow(p,`hsla(${p.h},90%,78%,${p.l})`,1.5+p.l*2)}}
-function show(t){message.textContent=t;message.classList.add('show')}function finish(){if(ended)return;ended=true;const final=Math.min(100,Math.max(78,Math.round(78+goodMoves*.35+Math.min(10,score/350))));finalScore.textContent=final+'/100';finalText.textContent=final>=94?'An unforgettable performance.':final>=87?'A graceful and beautiful performance.':'A wonderful musical moment.';finalScreen.classList.remove('hidden');hud.classList.add('hidden');soundBtn.classList.add('hidden');applause()}
-function onResults(r){ctx.clearRect(0,0,innerWidth,innerHeight);ctx.save();ctx.translate(innerWidth,0);ctx.scale(-1,1);ctx.drawImage(r.image,0,0,innerWidth,innerHeight);ctx.restore();ctx.fillStyle='#02051859';ctx.fillRect(0,0,innerWidth,innerHeight);drawParticles();if(ended)return;const elapsed=started?(performance.now()-startAt)/1000:0,left=Math.max(0,DURATION-elapsed);timerEl.textContent=`${String(Math.floor(left/60)).padStart(2,'0')}:${String(Math.ceil(left%60)).padStart(2,'0')}`;if(started&&left<=0){finish();return}
- const W=innerWidth,H=innerHeight,neck={x:W*.12,y:H*.39,w:W*.22,h:H*.22},path={x:W*.47,y:H*.42,w:W*.42,h:H*.23};let L=null,R=null;const hs=r.multiHandLandmarks||[];hs.forEach((lm,i)=>{if(r.multiHandedness[i].label==='Right')L=lm;else R=lm});if(hs.length===2&&(!L||!R)){L=hs[0];R=hs[1]}const lp=L?smooth('l',P(L[9])):null,rp=R?smooth('r',P(R[9])):null,inL=lp&&lp.x>neck.x&&lp.x<neck.x+neck.w&&lp.y>neck.y&&lp.y<neck.y+neck.h,inR=rp&&rp.x>path.x&&rp.x<path.x+path.w&&rp.y>path.y&&rp.y<path.y+path.h;
- box(neck,'#55eaff',inL);text('LEFT HAND · GUITAR NECK','Hold this calm, stable position',neck.x+15,neck.y+25,inL?'#fff':'#62eaff');for(let i=1;i<5;i++)line({x:neck.x+neck.w*i/5,y:neck.y+54},{x:neck.x+neck.w*i/5,y:neck.y+neck.h-18},'#65dff277',2,4);
- box(path,'#d88cff',inR);text('RIGHT HAND · MUSICAL PATH','Move gently from left to right',path.x+15,path.y+25,inR?'#fff':'#e4a2ff');const cy=path.y+path.h*.62,a=path.x+35,b=path.x+path.w-35,pulse=(Math.sin(performance.now()/330)+1)/2;for(let i=0;i<6;i++)line({x:a,y:cy-18+i*7},{x:b,y:cy-18+i*7},`hsla(${190+i*13},80%,78%,.45)`,1.3,7);line({x:a,y:cy},{x:b,y:cy},`rgba(255,255,255,${.5+pulse*.38})`,4+pulse*3,21);ctx.fillStyle='#fff';ctx.font='900 25px Inter';ctx.fillText('↔',b-12,cy-29);
- if(L)hand(L,'#67eaff');if(R)hand(R,'#e69aff');if(!L||!R){show('Place both hands inside the guides');return}if(!started&&inL&&inR){started=true;startAt=performance.now();nextBeat=ac.currentTime+.18;schedule();comboEl.textContent='THE PERFORMANCE BEGINS';setTimeout(()=>comboEl.textContent='MOVE GENTLY',2200)}if(!inL)show('Keep the left hand on the guitar neck');else if(!inR)show('Bring the right hand back to the musical path');else message.classList.remove('show');
- if(rp){const now=performance.now(),dt=lastFrameAt?Math.max(16,now-lastFrameAt):16;if(lastX!==null){const dx=rp.x-lastX,raw=Math.min(1,Math.abs(dx)/(dt*.34));energy=energy*.82+raw*.18;const valid=Math.abs(dx)>12&&Math.abs(rp.y-cy)<path.h*.48&&now-lastGestureAt>260;if(valid){goodMoves++;score+=7+Math.round(energy*12);gestureAccent(energy);burst(rp);comboEl.textContent=goodMoves%6===0?'BEAUTIFUL ✨':'♪';setTimeout(()=>{if(!ended)comboEl.textContent='MOVE GENTLY'},520);lastGestureAt=now}}lastX=rp.x;lastFrameAt=now;powerEl.style.width=`${Math.max(20,energy*100)}%`;scoreEl.textContent=score;glow(rp,'#fff',8+energy*8)}if(lp)glow(lp,'#fff',7)}
-async function start(){startBtn.disabled=true;startBtn.textContent='PREPARING THE CONCERT…';initAudio();const hands=new Hands({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});hands.setOptions({maxNumHands:2,modelComplexity:1,minDetectionConfidence:.58,minTrackingConfidence:.72});hands.onResults(onResults);cameraRef=new Camera(video,{onFrame:async()=>{if(busy)return;busy=true;try{await hands.send({image:video})}finally{busy=false}},width:640,height:480});try{await cameraRef.start();welcome.classList.add('hidden');hud.classList.remove('hidden');soundBtn.classList.remove('hidden');statusEl.classList.add('live');statusEl.innerHTML='<i></i> OPERA MODE';show('Place both hands inside the guides')}catch(e){startBtn.disabled=false;startBtn.textContent='TRY AGAIN';alert('Allow camera access and use Live Server or HTTPS.')}}
-startBtn.onclick=start;soundBtn.onclick=()=>{soundOn=!soundOn;master.gain.setTargetAtTime(soundOn?.9:0,ac.currentTime,.08);soundBtn.textContent=soundOn?'🔊 Sound on':'🔇 Sound off'};restartBtn.onclick=()=>location.reload();
+/* =========================================================
+   AIR GUITAR OPERA
+   Camera + MediaPipe + Web Audio
+   Sound stops when the hand leaves the zone
+   ========================================================= */
+
+
+/* -------------------------
+   DOM ELEMENTS
+------------------------- */
+
+const startScreen = document.getElementById("startScreen");
+const startButton = document.getElementById("startButton");
+const startStatus = document.getElementById("startStatus");
+
+const experience = document.getElementById("experience");
+
+const video = document.getElementById("cameraVideo");
+const handCanvas = document.getElementById("handCanvas");
+const effectsCanvas = document.getElementById("effectsCanvas");
+
+const handContext = handCanvas.getContext("2d");
+const effectsContext = effectsCanvas.getContext("2d");
+
+const leftZoneElement = document.getElementById("leftZone");
+const rightZoneElement = document.getElementById("rightZone");
+
+const leftEnergyElement =
+  document.querySelector("#leftEnergy i");
+
+const rightEnergyElement =
+  document.querySelector("#rightEnergy i");
+
+const leftFrequencyElement =
+  document.getElementById("leftFrequency");
+
+const rightFrequencyElement =
+  document.getElementById("rightFrequency");
+
+const cameraStatusElement =
+  document.getElementById("cameraStatus");
+
+const handStatusElement =
+  document.getElementById("handStatus");
+
+const soundStatusElement =
+  document.getElementById("soundStatus");
+
+const mainMessageElement =
+  document.getElementById("mainMessage");
+
+const subMessageElement =
+  document.getElementById("subMessage");
+
+const masterVolumeInput =
+  document.getElementById("masterVolume");
+
+const volumeValueElement =
+  document.getElementById("volumeValue");
+
+const stopButton =
+  document.getElementById("stopButton");
+
+const restartButton =
+  document.getElementById("restartButton");
+
+const fullscreenButton =
+  document.getElementById("fullscreenButton");
+
+const errorMessageElement =
+  document.getElementById("errorMessage");
+
+
+/* -------------------------
+   APPLICATION STATE
+------------------------- */
+
+let audioContext = null;
+let masterGain = null;
+
+let mediaPipeHands = null;
+let camera = null;
+
+let leftHandInside = false;
+let rightHandInside = false;
+
+let leftHandEnergy = 0;
+let rightHandEnergy = 0;
+
+let lastHandDetectedAt = 0;
+
+let lastLeftPoint = null;
+let lastRightPoint = null;
+
+let animationFrameId = null;
+
+const activeSounds = new Map();
+const particles = [];
+
+
+/* -------------------------
+   CONFIGURATION
+------------------------- */
+
+const HAND_LOST_DELAY = 180;
+
+const LEFT_ZONE = {
+  xMin: 0.07,
+  xMax: 0.37,
+  yMin: 0.26,
+  yMax: 0.80
+};
+
+const RIGHT_ZONE = {
+  xMin: 0.63,
+  xMax: 0.93,
+  yMin: 0.26,
+  yMax: 0.80
+};
+
+
+/* -------------------------
+   AUDIO INITIALIZATION
+------------------------- */
+
+function initializeAudio() {
+  if (audioContext) {
+    return;
+  }
+
+  audioContext = new (
+    window.AudioContext ||
+    window.webkitAudioContext
+  )();
+
+  masterGain = audioContext.createGain();
+
+  masterGain.gain.value =
+    Number(masterVolumeInput.value);
+
+  masterGain.connect(audioContext.destination);
+
+  soundStatusElement.textContent =
+    "SOUND: READY";
+}
+
+
+/* -------------------------
+   SOUND CREATION
+------------------------- */
+
+function startZoneSound(
+  zoneName,
+  frequency,
+  oscillatorType = "sine"
+) {
+  initializeAudio();
+
+  if (audioContext.state === "suspended") {
+    audioContext.resume();
+  }
+
+  if (activeSounds.has(zoneName)) {
+    updateZoneFrequency(zoneName, frequency);
+    return;
+  }
+
+  const oscillator =
+    audioContext.createOscillator();
+
+  const gainNode =
+    audioContext.createGain();
+
+  const filterNode =
+    audioContext.createBiquadFilter();
+
+  oscillator.type = oscillatorType;
+  oscillator.frequency.value = frequency;
+
+  filterNode.type = "lowpass";
+  filterNode.frequency.value = 1800;
+  filterNode.Q.value = 1.5;
+
+  gainNode.gain.setValueAtTime(
+    0,
+    audioContext.currentTime
+  );
+
+  gainNode.gain.linearRampToValueAtTime(
+    0.28,
+    audioContext.currentTime + 0.06
+  );
+
+  oscillator.connect(filterNode);
+  filterNode.connect(gainNode);
+  gainNode.connect(masterGain);
+
+  oscillator.start();
+
+  activeSounds.set(zoneName, {
+    oscillator,
+    gainNode,
+    filterNode,
+    frequency
+  });
+
+  soundStatusElement.textContent =
+    "SOUND: PLAYING";
+}
+
+
+/* -------------------------
+   UPDATE FREQUENCY
+------------------------- */
+
+function updateZoneFrequency(zoneName, frequency) {
+  const sound = activeSounds.get(zoneName);
+
+  if (!sound || !audioContext) {
+    return;
+  }
+
+  const now = audioContext.currentTime;
+
+  sound.oscillator.frequency.cancelScheduledValues(now);
+
+  sound.oscillator.frequency.linearRampToValueAtTime(
+    frequency,
+    now + 0.08
+  );
+
+  sound.filterNode.frequency.linearRampToValueAtTime(
+    Math.min(3200, frequency * 5),
+    now + 0.08
+  );
+
+  sound.frequency = frequency;
+}
+
+
+/* -------------------------
+   STOP ONE ZONE SOUND
+------------------------- */
+
+function stopZoneSound(zoneName) {
+  const sound = activeSounds.get(zoneName);
+
+  if (!sound || !audioContext) {
+    return;
+  }
+
+  const now = audioContext.currentTime;
+
+  sound.gainNode.gain.cancelScheduledValues(now);
+
+  sound.gainNode.gain.setValueAtTime(
+    Math.max(
+      0.0001,
+      sound.gainNode.gain.value
+    ),
+    now
+  );
+
+  sound.gainNode.gain.exponentialRampToValueAtTime(
+    0.0001,
+    now + 0.1
+  );
+
+  window.setTimeout(() => {
+    try {
+      sound.oscillator.stop();
+    } catch (error) {
+      console.warn(
+        `${zoneName} oscillator already stopped`,
+        error
+      );
+    }
+
+    try {
+      sound.oscillator.disconnect();
+      sound.filterNode.disconnect();
+      sound.gainNode.disconnect();
+    } catch (error) {
+      console.warn(
+        `${zoneName} audio disconnection error`,
+        error
+      );
+    }
+  }, 130);
+
+  activeSounds.delete(zoneName);
+
+  if (activeSounds.size === 0) {
+    soundStatusElement.textContent =
+      "SOUND: SILENT";
+  }
+}
+
+
+/* -------------------------
+   STOP EVERYTHING
+------------------------- */
+
+function stopAllSounds() {
+  const zoneNames =
+    Array.from(activeSounds.keys());
+
+  zoneNames.forEach(stopZoneSound);
+
+  leftHandInside = false;
+  rightHandInside = false;
+
+  leftHandEnergy = 0;
+  rightHandEnergy = 0;
+
+  updateZoneInterface();
+}
+
+
+/* -------------------------
+   FREQUENCY CALCULATION
+------------------------- */
+
+function calculateFrequency(
+  normalizedY,
+  minFrequency,
+  maxFrequency
+) {
+  const clampedY = Math.max(
+    0,
+    Math.min(1, normalizedY)
+  );
+
+  const invertedY = 1 - clampedY;
+
+  return (
+    minFrequency +
+    invertedY * (
+      maxFrequency - minFrequency
+    )
+  );
+}
+
+
+/* -------------------------
+   CANVAS SIZE
+------------------------- */
+
+function resizeCanvases() {
+  const pixelRatio =
+    Math.min(
+      window.devicePixelRatio || 1,
+      2
+    );
+
+  [handCanvas, effectsCanvas].forEach((canvas) => {
+    canvas.width =
+      window.innerWidth * pixelRatio;
+
+    canvas.height =
+      window.innerHeight * pixelRatio;
+
+    canvas.style.width =
+      `${window.innerWidth}px`;
+
+    canvas.style.height =
+      `${window.innerHeight}px`;
+
+    const context =
+      canvas.getContext("2d");
+
+    context.setTransform(
+      pixelRatio,
+      0,
+      0,
+      pixelRatio,
+      0,
+      0
+    );
+  });
+}
+
+
+/* -------------------------
+   PARTICLES
+------------------------- */
+
+function createParticles(
+  x,
+  y,
+  color,
+  amount = 7
+) {
+  for (let index = 0; index < amount; index += 1) {
+    particles.push({
+      x,
+      y,
+
+      velocityX:
+        (Math.random() - 0.5) * 4,
+
+      velocityY:
+        (Math.random() - 0.5) * 4,
+
+      life: 1,
+
+      size:
+        Math.random() * 4 + 1,
+
+      color
+    });
+  }
+
+  if (particles.length > 500) {
+    particles.splice(
+      0,
+      particles.length - 500
+    );
+  }
+}
+
+
+/* -------------------------
+   PARTICLE ANIMATION
+------------------------- */
+
+function animateParticles() {
+  effectsContext.fillStyle =
+    "rgba(2, 4, 10, 0.13)";
+
+  effectsContext.fillRect(
+    0,
+    0,
+    window.innerWidth,
+    window.innerHeight
+  );
+
+  for (const particle of particles) {
+    particle.x += particle.velocityX;
+    particle.y += particle.velocityY;
+
+    particle.velocityX *= 0.98;
+    particle.velocityY *= 0.98;
+
+    particle.life -= 0.018;
+
+    effectsContext.globalAlpha =
+      Math.max(0, particle.life);
+
+    effectsContext.fillStyle =
+      particle.color;
+
+    effectsContext.shadowBlur = 14;
+    effectsContext.shadowColor =
+      particle.color;
+
+    effectsContext.beginPath();
+
+    effectsContext.arc(
+      particle.x,
+      particle.y,
+      particle.size,
+      0,
+      Math.PI * 2
+    );
+
+    effectsContext.fill();
+  }
+
+  effectsContext.globalAlpha = 1;
+  effectsContext.shadowBlur = 0;
+
+  for (
+    let index = particles.length - 1;
+    index >= 0;
+    index -= 1
+  ) {
+    if (particles[index].life <= 0) {
+      particles.splice(index, 1);
+    }
+  }
+
+  animationFrameId =
+    window.requestAnimationFrame(
+      animateParticles
+    );
+}
+
+
+/* -------------------------
+   CHECK POINT IN ZONE
+------------------------- */
+
+function pointIsInsideZone(point, zone) {
+  if (!point) {
+    return false;
+  }
+
+  return (
+    point.x >= zone.xMin &&
+    point.x <= zone.xMax &&
+    point.y >= zone.yMin &&
+    point.y <= zone.yMax
+  );
+}
+
+
+/* -------------------------
+   LANDMARK COORDINATES
+------------------------- */
+
+function convertLandmarkToScreen(landmark) {
+  return {
+    /* Video is mirrored */
+    x: 1 - landmark.x,
+    y: landmark.y,
+
+    screenX:
+      (1 - landmark.x) *
+      window.innerWidth,
+
+    screenY:
+      landmark.y *
+      window.innerHeight
+  };
+}
+
+
+/* -------------------------
+   DRAW HAND LANDMARKS
+------------------------- */
+
+function drawDetectedHand(
+  landmarks,
+  color
+) {
+  const connections = [
+    [0, 1],
+    [1, 2],
+    [2, 3],
+    [3, 4],
+
+    [0, 5],
+    [5, 6],
+    [6, 7],
+    [7, 8],
+
+    [5, 9],
+    [9, 10],
+    [10, 11],
+    [11, 12],
+
+    [9, 13],
+    [13, 14],
+    [14, 15],
+    [15, 16],
+
+    [13, 17],
+    [17, 18],
+    [18, 19],
+    [19, 20],
+
+    [0, 17]
+  ];
+
+  handContext.save();
+
+  handContext.strokeStyle = color;
+  handContext.fillStyle = "#ffffff";
+
+  handContext.lineWidth = 2;
+
+  handContext.shadowBlur = 12;
+  handContext.shadowColor = color;
+
+  for (const [firstIndex, secondIndex] of connections) {
+    const first =
+      convertLandmarkToScreen(
+        landmarks[firstIndex]
+      );
+
+    const second =
+      convertLandmarkToScreen(
+        landmarks[secondIndex]
+      );
+
+    handContext.beginPath();
+
+    handContext.moveTo(
+      first.screenX,
+      first.screenY
+    );
+
+    handContext.lineTo(
+      second.screenX,
+      second.screenY
+    );
+
+    handContext.stroke();
+  }
+
+  for (const landmark of landmarks) {
+    const point =
+      convertLandmarkToScreen(landmark);
+
+    handContext.beginPath();
+
+    handContext.arc(
+      point.screenX,
+      point.screenY,
+      4,
+      0,
+      Math.PI * 2
+    );
+
+    handContext.fill();
+  }
+
+  handContext.restore();
+}
+
+
+/* -------------------------
+   PROCESS LEFT OR RIGHT HAND
+------------------------- */
+
+function processHand(
+  landmarks,
+  handLabel
+) {
+  /*
+    Landmark 9 is near the center
+    of the palm.
+  */
+  const palmPoint =
+    convertLandmarkToScreen(
+      landmarks[9]
+    );
+
+  if (handLabel === "Left") {
+    lastLeftPoint = palmPoint;
+  } else {
+    lastRightPoint = palmPoint;
+  }
+
+  return palmPoint;
+}
+
+
+/* -------------------------
+   UPDATE SOUNDS AND ZONES
+------------------------- */
+
+function updateHandZones(
+  leftPoint,
+  rightPoint
+) {
+  /*
+    Because the camera image is mirrored,
+    the visual left and right zones are
+    based on the final screen coordinates.
+  */
+
+  const newLeftHandInside =
+    pointIsInsideZone(
+      leftPoint,
+      LEFT_ZONE
+    ) ||
+    pointIsInsideZone(
+      rightPoint,
+      LEFT_ZONE
+    );
+
+  const newRightHandInside =
+    pointIsInsideZone(
+      rightPoint,
+      RIGHT_ZONE
+    ) ||
+    pointIsInsideZone(
+      leftPoint,
+      RIGHT_ZONE
+    );
+
+
+  /* LEFT ZONE */
+
+  if (newLeftHandInside) {
+    const activePoint =
+      pointIsInsideZone(
+        leftPoint,
+        LEFT_ZONE
+      )
+        ? leftPoint
+        : rightPoint;
+
+    const leftFrequency =
+      calculateFrequency(
+        activePoint.y,
+        90,
+        280
+      );
+
+    if (!leftHandInside) {
+      startZoneSound(
+        "left",
+        leftFrequency,
+        "sawtooth"
+      );
+    } else {
+      updateZoneFrequency(
+        "left",
+        leftFrequency
+      );
+    }
+
+    leftHandEnergy =
+      Math.min(
+        100,
+        leftHandEnergy + 8
+      );
+
+    leftFrequencyElement.textContent =
+      `${Math.round(leftFrequency)} Hz`;
+
+    createParticles(
+      activePoint.screenX,
+      activePoint.screenY,
+      "#61e8ff",
+      3
+    );
+  } else {
+    if (leftHandInside) {
+      stopZoneSound("left");
+    }
+
+    leftHandEnergy =
+      Math.max(
+        0,
+        leftHandEnergy - 12
+      );
+
+    leftFrequencyElement.textContent =
+      "Waiting for hand";
+  }
+
+
+  /* RIGHT ZONE */
+
+  if (newRightHandInside) {
+    const activePoint =
+      pointIsInsideZone(
+        rightPoint,
+        RIGHT_ZONE
+      )
+        ? rightPoint
+        : leftPoint;
+
+    const rightFrequency =
+      calculateFrequency(
+        activePoint.y,
+        280,
+        880
+      );
+
+    if (!rightHandInside) {
+      startZoneSound(
+        "right",
+        rightFrequency,
+        "triangle"
+      );
+    } else {
+      updateZoneFrequency(
+        "right",
+        rightFrequency
+      );
+    }
+
+    rightHandEnergy =
+      Math.min(
+        100,
+        rightHandEnergy + 8
+      );
+
+    rightFrequencyElement.textContent =
+      `${Math.round(rightFrequency)} Hz`;
+
+    createParticles(
+      activePoint.screenX,
+      activePoint.screenY,
+      "#ff4ea3",
+      3
+    );
+  } else {
+    if (rightHandInside) {
+      stopZoneSound("right");
+    }
+
+    rightHandEnergy =
+      Math.max(
+        0,
+        rightHandEnergy - 12
+      );
+
+    rightFrequencyElement.textContent =
+      "Waiting for hand";
+  }
+
+
+  leftHandInside =
+    newLeftHandInside;
+
+  rightHandInside =
+    newRightHandInside;
+
+  updateZoneInterface();
+}
+
+
+/* -------------------------
+   ZONE INTERFACE
+------------------------- */
+
+function updateZoneInterface() {
+  leftZoneElement.classList.toggle(
+    "active",
+    leftHandInside
+  );
+
+  rightZoneElement.classList.toggle(
+    "active",
+    rightHandInside
+  );
+
+  leftEnergyElement.style.width =
+    `${leftHandEnergy}%`;
+
+  rightEnergyElement.style.width =
+    `${rightHandEnergy}%`;
+
+  if (leftHandInside && rightHandInside) {
+    mainMessageElement.textContent =
+      "Both hands are creating the opera";
+
+    subMessageElement.textContent =
+      "Move vertically to change both musical pitches";
+  } else if (leftHandInside) {
+    mainMessageElement.textContent =
+      "Left-hand bass is active";
+
+    subMessageElement.textContent =
+      "Move the hand vertically to change the pitch";
+  } else if (rightHandInside) {
+    mainMessageElement.textContent =
+      "Right-hand lead is active";
+
+    subMessageElement.textContent =
+      "Move the hand vertically to change the pitch";
+  } else {
+    mainMessageElement.textContent =
+      "Place both hands inside the two zones";
+
+    subMessageElement.textContent =
+      "The sound stops when your hand leaves its zone";
+  }
+}
+
+
+/* -------------------------
+   MEDIAPIPE CALLBACK
+------------------------- */
+
+function onMediaPipeResults(results) {
+  handContext.clearRect(
+    0,
+    0,
+    window.innerWidth,
+    window.innerHeight
+  );
+
+  const detectedHands =
+    results.multiHandLandmarks || [];
+
+  const handedness =
+    results.multiHandedness || [];
+
+  if (detectedHands.length === 0) {
+    handStatusElement.textContent =
+      "HANDS: NOT DETECTED";
+
+    const timeWithoutHands =
+      performance.now() -
+      lastHandDetectedAt;
+
+    /*
+      Stop after a small tolerance.
+      This prevents unstable sound cuts
+      when one camera frame is missed.
+    */
+    if (
+      timeWithoutHands >
+      HAND_LOST_DELAY
+    ) {
+      lastLeftPoint = null;
+      lastRightPoint = null;
+
+      stopAllSounds();
+    }
+
+    return;
+  }
+
+  lastHandDetectedAt =
+    performance.now();
+
+  handStatusElement.textContent =
+    `HANDS: ${detectedHands.length} DETECTED`;
+
+  let currentLeftPoint = null;
+  let currentRightPoint = null;
+
+  detectedHands.forEach(
+    (landmarks, index) => {
+      const classification =
+        handedness[index];
+
+      const label =
+        classification &&
+        classification.label
+          ? classification.label
+          : index === 0
+            ? "Left"
+            : "Right";
+
+      const color =
+        label === "Left"
+          ? "#61e8ff"
+          : "#ff4ea3";
+
+      drawDetectedHand(
+        landmarks,
+        color
+      );
+
+      const palmPoint =
+        processHand(
+          landmarks,
+          label
+        );
+
+      if (label === "Left") {
+        currentLeftPoint =
+          palmPoint;
+      } else {
+        currentRightPoint =
+          palmPoint;
+      }
+    }
+  );
+
+  updateHandZones(
+    currentLeftPoint,
+    currentRightPoint
+  );
+}
+
+
+/* -------------------------
+   INITIALIZE MEDIAPIPE
+------------------------- */
+
+function initializeMediaPipe() {
+  if (typeof Hands === "undefined") {
+    throw new Error(
+      "MediaPipe Hands could not be loaded. Check the Internet connection."
+    );
+  }
+
+  mediaPipeHands = new Hands({
+    locateFile: (fileName) => {
+      return (
+        "https://cdn.jsdelivr.net/npm/" +
+        "@mediapipe/hands/" +
+        fileName
+      );
+    }
+  });
+
+  mediaPipeHands.setOptions({
+    maxNumHands: 2,
+    modelComplexity: 1,
+
+    minDetectionConfidence: 0.65,
+    minTrackingConfidence: 0.60,
+
+    selfieMode: true
+  });
+
+  mediaPipeHands.onResults(
+    onMediaPipeResults
+  );
+}
+
+
+/* -------------------------
+   START CAMERA
+------------------------- */
+
+async function startCamera() {
+  startButton.disabled = true;
+
+  startStatus.textContent =
+    "Loading MediaPipe and requesting camera permission...";
+
+  try {
+    initializeAudio();
+    initializeMediaPipe();
+
+    if (
+      !navigator.mediaDevices ||
+      !navigator.mediaDevices.getUserMedia
+    ) {
+      throw new Error(
+        "This browser does not support camera access."
+      );
+    }
+
+    camera = new Camera(video, {
+      onFrame: async () => {
+        if (
+          mediaPipeHands &&
+          video.readyState >= 2
+        ) {
+          await mediaPipeHands.send({
+            image: video
+          });
+        }
+      },
+
+      width: 1280,
+      height: 720
+    });
+
+    await camera.start();
+
+    startScreen.classList.add("hidden");
+    experience.classList.remove("hidden");
+
+    cameraStatusElement.textContent =
+      "CAMERA: ACTIVE";
+
+    handStatusElement.textContent =
+      "HANDS: SEARCHING";
+
+    resizeCanvases();
+
+    if (!animationFrameId) {
+      animateParticles();
+    }
+  } catch (error) {
+    console.error(
+      "Air Guitar Opera startup error:",
+      error
+    );
+
+    startButton.disabled = false;
+
+    startStatus.textContent =
+      error.message ||
+      "The camera could not be started.";
+
+    showError(
+      "Camera or MediaPipe error: " +
+      (
+        error.message ||
+        "unknown error"
+      )
+    );
+  }
+}
+
+
+/* -------------------------
+   RESTART CAMERA
+------------------------- */
+
+async function restartCamera() {
+  stopAllSounds();
+
+  cameraStatusElement.textContent =
+    "CAMERA: RESTARTING";
+
+  if (camera) {
+    try {
+      await camera.stop();
+    } catch (error) {
+      console.warn(
+        "Camera stop warning:",
+        error
+      );
+    }
+  }
+
+  if (video.srcObject) {
+    video.srcObject
+      .getTracks()
+      .forEach(
+        (track) => track.stop()
+      );
+
+    video.srcObject = null;
+  }
+
+  try {
+    camera = new Camera(video, {
+      onFrame: async () => {
+        if (
+          mediaPipeHands &&
+          video.readyState >= 2
+        ) {
+          await mediaPipeHands.send({
+            image: video
+          });
+        }
+      },
+
+      width: 1280,
+      height: 720
+    });
+
+    await camera.start();
+
+    cameraStatusElement.textContent =
+      "CAMERA: ACTIVE";
+  } catch (error) {
+    cameraStatusElement.textContent =
+      "CAMERA: ERROR";
+
+    showError(
+      "Unable to restart the camera."
+    );
+
+    console.error(error);
+  }
+}
+
+
+/* -------------------------
+   ERROR MESSAGE
+------------------------- */
+
+function showError(message) {
+  errorMessageElement.textContent =
+    message;
+
+  errorMessageElement.classList.remove(
+    "hidden"
+  );
+
+  window.setTimeout(() => {
+    errorMessageElement.classList.add(
+      "hidden"
+    );
+  }, 6000);
+}
+
+
+/* -------------------------
+   VOLUME CONTROL
+------------------------- */
+
+masterVolumeInput.addEventListener(
+  "input",
+  () => {
+    const volume =
+      Number(masterVolumeInput.value);
+
+    volumeValueElement.textContent =
+      `${Math.round(volume * 200)}%`;
+
+    if (
+      masterGain &&
+      audioContext
+    ) {
+      masterGain.gain.linearRampToValueAtTime(
+        volume,
+        audioContext.currentTime + 0.05
+      );
+    }
+  }
+);
+
+
+/* -------------------------
+   BUTTON EVENTS
+------------------------- */
+
+startButton.addEventListener(
+  "click",
+  startCamera
+);
+
+stopButton.addEventListener(
+  "click",
+  stopAllSounds
+);
+
+restartButton.addEventListener(
+  "click",
+  restartCamera
+);
+
+fullscreenButton.addEventListener(
+  "click",
+  async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (error) {
+      showError(
+        "Fullscreen mode is unavailable."
+      );
+    }
+  }
+);
+
+
+/* -------------------------
+   GLOBAL SAFETY EVENTS
+------------------------- */
+
+document.addEventListener(
+  "visibilitychange",
+  () => {
+    if (document.hidden) {
+      stopAllSounds();
+    }
+  }
+);
+
+window.addEventListener(
+  "blur",
+  stopAllSounds
+);
+
+window.addEventListener(
+  "beforeunload",
+  stopAllSounds
+);
+
+window.addEventListener(
+  "resize",
+  resizeCanvases
+);
+
+
+/* -------------------------
+   INITIAL UI
+------------------------- */
+
+updateZoneInterface();
+resizeCanvases();
