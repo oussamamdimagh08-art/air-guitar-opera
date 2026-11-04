@@ -18,11 +18,13 @@
     crossorigin="anonymous">
   </script>
 
+  <!-- MediaPipe Camera Utilities -->
   <script
     src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"
     crossorigin="anonymous">
   </script>
 
+  <!-- MediaPipe Drawing Utilities -->
   <script
     src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
     crossorigin="anonymous">
@@ -46,25 +48,26 @@
       </h1>
 
       <p class="introduction">
-        Place your left and right hands inside the two detection zones.
-        Move your hands to create a digital guitar performance.
+        Place your left and right hands inside the two detection
+        zones. Move your hands vertically to create a digital
+        guitar performance.
       </p>
 
       <div class="instructions-grid">
 
         <article>
           <strong>LEFT HAND</strong>
-          <span>Controls the lower sound</span>
+          <span>Controls the lower musical sound</span>
         </article>
 
         <article>
           <strong>RIGHT HAND</strong>
-          <span>Controls the higher sound</span>
+          <span>Controls the higher musical sound</span>
         </article>
 
         <article>
           <strong>MOVE VERTICALLY</strong>
-          <span>Changes the musical pitch</span>
+          <span>Changes the pitch in real time</span>
         </article>
 
         <article>
@@ -90,7 +93,7 @@
   <!-- MAIN EXPERIENCE -->
   <main id="experience" class="experience hidden">
 
-    <!-- CAMERA -->
+    <!-- LIVE CAMERA -->
     <video
       id="cameraVideo"
       autoplay
@@ -98,14 +101,14 @@
       playsinline>
     </video>
 
-    <!-- MEDIAPIPE LANDMARKS -->
+    <!-- HAND LANDMARKS -->
     <canvas id="handCanvas"></canvas>
 
-    <!-- VISUAL EFFECTS -->
+    <!-- PARTICLE EFFECTS -->
     <canvas id="effectsCanvas"></canvas>
 
 
-    <!-- TOP BAR -->
+    <!-- TOP INFORMATION -->
     <header class="top-bar">
 
       <div class="brand">
@@ -114,7 +117,7 @@
 
         <div>
           <strong>AIR GUITAR OPERA</strong>
-          <small>LIVE HAND TRACKING</small>
+          <small>LIVE MEDIAPIPE HAND TRACKING</small>
         </div>
 
       </div>
@@ -200,7 +203,7 @@
     </section>
 
 
-    <!-- CENTER MESSAGE -->
+    <!-- CENTRAL INSTRUCTIONS -->
     <section class="center-message">
 
       <p id="mainMessage">
@@ -214,7 +217,7 @@
     </section>
 
 
-    <!-- VOLUME -->
+    <!-- MASTER VOLUME -->
     <section class="volume-panel">
 
       <label for="masterVolume">
@@ -237,7 +240,7 @@
     </section>
 
 
-    <!-- ACTION BUTTONS -->
+    <!-- CONTROL BUTTONS -->
     <section class="action-buttons">
 
       <button id="stopButton" type="button">
@@ -256,11 +259,15 @@
 
 
     <!-- ERROR MESSAGE -->
-    <div id="errorMessage" class="error-message hidden"></div>
+    <div
+      id="errorMessage"
+      class="error-message hidden">
+    </div>
 
   </main>
 
 
+  <!-- APPLICATION JAVASCRIPT -->
   <script src="script.js"></script>
 
 </body>
