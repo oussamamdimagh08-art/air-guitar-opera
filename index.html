@@ -33,7 +33,10 @@
 
 <body>
 
-  <!-- START SCREEN -->
+  <!-- =========================
+       START SCREEN
+  ========================== -->
+
   <section id="startScreen" class="start-screen">
 
     <div class="start-card">
@@ -48,31 +51,44 @@
       </h1>
 
       <p class="introduction">
-        Place your left and right hands inside the two detection
-        zones. Move your hands vertically to create a digital
-        guitar performance.
+        Transform your hand movements into a live digital guitar
+        performance. Choose a chord with your left hand, then play
+        the guitar with your right hand.
+      </p>
+
+      <p class="creator">
+        An interactive creative-coding experiment by
+        <strong>Oussama Mdemagh</strong>
       </p>
 
       <div class="instructions-grid">
 
         <article>
           <strong>LEFT HAND</strong>
-          <span>Controls the lower musical sound</span>
+          <span>
+            Selects the chord: C, Am, F or G
+          </span>
         </article>
 
         <article>
           <strong>RIGHT HAND</strong>
-          <span>Controls the higher musical sound</span>
+          <span>
+            Performs the guitar notes and strumming
+          </span>
         </article>
 
         <article>
           <strong>MOVE VERTICALLY</strong>
-          <span>Changes the pitch in real time</span>
+          <span>
+            Changes the note and the selected chord
+          </span>
         </article>
 
         <article>
-          <strong>LEAVE THE ZONE</strong>
-          <span>The sound stops automatically</span>
+          <strong>MOVE QUICKLY</strong>
+          <span>
+            Produces a more energetic guitar strum
+          </span>
         </article>
 
       </div>
@@ -85,15 +101,24 @@
         Camera permission will be requested.
       </p>
 
+      <p class="privacy-message">
+        Camera processing remains inside your browser.
+        No video is uploaded or recorded.
+      </p>
+
     </div>
 
   </section>
 
 
-  <!-- MAIN EXPERIENCE -->
+  <!-- =========================
+       MAIN EXPERIENCE
+  ========================== -->
+
   <main id="experience" class="experience hidden">
 
     <!-- LIVE CAMERA -->
+
     <video
       id="cameraVideo"
       autoplay
@@ -101,14 +126,21 @@
       playsinline>
     </video>
 
-    <!-- HAND LANDMARKS -->
+
+    <!-- MEDIAPIPE HAND LANDMARKS -->
+
     <canvas id="handCanvas"></canvas>
 
-    <!-- PARTICLE EFFECTS -->
+
+    <!-- VISUAL PARTICLE EFFECTS -->
+
     <canvas id="effectsCanvas"></canvas>
 
 
-    <!-- TOP INFORMATION -->
+    <!-- =========================
+         TOP INFORMATION BAR
+    ========================== -->
+
     <header class="top-bar">
 
       <div class="brand">
@@ -117,7 +149,10 @@
 
         <div>
           <strong>AIR GUITAR OPERA</strong>
-          <small>LIVE MEDIAPIPE HAND TRACKING</small>
+
+          <small>
+            LIVE MEDIAPIPE HAND TRACKING
+          </small>
         </div>
 
       </div>
@@ -141,8 +176,14 @@
     </header>
 
 
-    <!-- LEFT HAND ZONE -->
-    <section id="leftZone" class="hand-zone left-zone">
+    <!-- =========================
+         LEFT HAND CHORD ZONE
+    ========================== -->
+
+    <section
+      id="leftZone"
+      class="hand-zone left-zone"
+    >
 
       <div class="zone-corner top-left"></div>
       <div class="zone-corner top-right"></div>
@@ -155,13 +196,26 @@
           LEFT HAND
         </span>
 
+        <span class="zone-purpose">
+          SELECT CHORD
+        </span>
+
         <strong id="leftNote">
-          BASS
+          C
         </strong>
 
         <span id="leftFrequency">
-          Waiting for hand
+          C MAJOR
         </span>
+
+      </div>
+
+      <div class="chord-list">
+
+        <span>C</span>
+        <span>Am</span>
+        <span>F</span>
+        <span>G</span>
 
       </div>
 
@@ -172,8 +226,14 @@
     </section>
 
 
-    <!-- RIGHT HAND ZONE -->
-    <section id="rightZone" class="hand-zone right-zone">
+    <!-- =========================
+         RIGHT HAND GUITAR ZONE
+    ========================== -->
+
+    <section
+      id="rightZone"
+      class="hand-zone right-zone"
+    >
 
       <div class="zone-corner top-left"></div>
       <div class="zone-corner top-right"></div>
@@ -186,13 +246,36 @@
           RIGHT HAND
         </span>
 
+        <span class="zone-purpose">
+          PERFORMANCE ZONE
+        </span>
+
         <strong id="rightNote">
-          LEAD
+          GUITAR
         </strong>
 
         <span id="rightFrequency">
-          Waiting for hand
+          Move to play
         </span>
+
+      </div>
+
+      <div class="performance-guide">
+
+        <div class="guide-high">
+          <span>HIGH NOTES</span>
+          <i></i>
+        </div>
+
+        <div class="guide-medium">
+          <span>MID NOTES</span>
+          <i></i>
+        </div>
+
+        <div class="guide-low">
+          <span>LOW NOTES</span>
+          <i></i>
+        </div>
 
       </div>
 
@@ -203,21 +286,27 @@
     </section>
 
 
-    <!-- CENTRAL INSTRUCTIONS -->
+    <!-- =========================
+         CENTER INSTRUCTIONS
+    ========================== -->
+
     <section class="center-message">
 
       <p id="mainMessage">
-        Place both hands inside the two zones
+        Place your left hand inside the chord zone
       </p>
 
       <small id="subMessage">
-        The sound stops when your hand leaves its zone
+        Then move your right hand inside the performance zone
       </small>
 
     </section>
 
 
-    <!-- MASTER VOLUME -->
+    <!-- =========================
+         VOLUME CONTROL
+    ========================== -->
+
     <section class="volume-panel">
 
       <label for="masterVolume">
@@ -240,7 +329,10 @@
     </section>
 
 
-    <!-- CONTROL BUTTONS -->
+    <!-- =========================
+         CONTROL BUTTONS
+    ========================== -->
+
     <section class="action-buttons">
 
       <button id="stopButton" type="button">
@@ -258,7 +350,20 @@
     </section>
 
 
-    <!-- ERROR MESSAGE -->
+    <!-- =========================
+         CREATOR SIGNATURE
+    ========================== -->
+
+    <div class="creator-signature">
+      Created by
+      <strong>Oussama Mdemagh</strong>
+    </div>
+
+
+    <!-- =========================
+         ERROR MESSAGE
+    ========================== -->
+
     <div
       id="errorMessage"
       class="error-message hidden">
@@ -267,7 +372,10 @@
   </main>
 
 
-  <!-- APPLICATION JAVASCRIPT -->
+  <!-- IMPORTANT:
+       Your GitHub repository uses app.js
+  -->
+
   <script src="app.js"></script>
 
 </body>
