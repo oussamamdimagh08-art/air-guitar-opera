@@ -1,13 +1,19 @@
 /* =========================================================
    AIR GUITAR OPERA
-   Camera + MediaPipe + Web Audio
-   Sound stops when the hand leaves the zone
+   Created by Oussama Mdemagh
+
+   MediaPipe Hands + Web Audio API
+   Left hand  = chord selection
+   Right hand = guitar performance
+
+   The sound automatically stops when the hand leaves
+   the corresponding detection zone.
    ========================================================= */
 
 
-/* -------------------------
+/* =========================================================
    DOM ELEMENTS
-------------------------- */
+========================================================= */
 
 const startScreen = document.getElementById("startScreen");
 const startButton = document.getElementById("startButton");
@@ -36,6 +42,12 @@ const leftFrequencyElement =
 
 const rightFrequencyElement =
   document.getElementById("rightFrequency");
+
+const leftNoteElement =
+  document.getElementById("leftNote");
+
+const rightNoteElement =
+  document.getElementById("rightNote");
 
 const cameraStatusElement =
   document.getElementById("cameraStatus");
@@ -71,12 +83,13 @@ const errorMessageElement =
   document.getElementById("errorMessage");
 
 
-/* -------------------------
+/* =========================================================
    APPLICATION STATE
-------------------------- */
+========================================================= */
 
 let audioContext = null;
-let masterGain = null;
+let masterGainNode = null;
+let reverbNode = null;
 
 let mediaPipeHands = null;
 let camera = null;
@@ -89,39 +102,107 @@ let rightHandEnergy = 0;
 
 let lastHandDetectedAt = 0;
 
-let lastLeftPoint = null;
-let lastRightPoint = null;
+let lastRightHandPosition = null;
+let lastRightHandTime = 0;
+
+let lastStrumAt = 0;
+let lastPlayedString = -1;
+
+let selectedChordIndex = 0;
 
 let animationFrameId = null;
 
-const activeSounds = new Map();
+const activeSources = new Set();
 const particles = [];
 
 
-/* -------------------------
+/* =========================================================
    CONFIGURATION
-------------------------- */
+========================================================= */
 
 const HAND_LOST_DELAY = 180;
 
+/*
+  Small left-hand zone.
+  Used only to choose a chord.
+*/
+
 const LEFT_ZONE = {
-  xMin: 0.07,
-  xMax: 0.37,
-  yMin: 0.26,
-  yMax: 0.80
+  xMin: 0.05,
+  xMax: 0.22,
+  yMin: 0.35,
+  yMax: 0.75
 };
+
+/*
+  Large right-hand performance zone.
+*/
 
 const RIGHT_ZONE = {
-  xMin: 0.63,
-  xMax: 0.93,
-  yMin: 0.26,
-  yMax: 0.80
+  xMin: 0.47,
+  xMax: 0.94,
+  yMin: 0.23,
+  yMax: 0.83
 };
 
+const STRUM_MINIMUM_SPEED = 0.32;
+const STRUM_COOLDOWN = 115;
 
-/* -------------------------
+
+/* =========================================================
+   MUSICAL DATA
+========================================================= */
+
+const NOTE_FREQUENCIES = {
+  C3: 130.81,
+  D3: 146.83,
+  E3: 164.81,
+  F3: 174.61,
+  G3: 196.00,
+  A3: 220.00,
+  B3: 246.94,
+
+  C4: 261.63,
+  D4: 293.66,
+  E4: 329.63,
+  F4: 349.23,
+  G4: 392.00,
+  A4: 440.00,
+  B4: 493.88,
+
+  C5: 523.25,
+  D5: 587.33,
+  E5: 659.25,
+  G5: 783.99
+};
+
+const CHORDS = [
+  {
+    name: "C MAJOR",
+    shortName: "C",
+    notes: ["C3", "E3", "G3", "C4", "E4"]
+  },
+  {
+    name: "A MINOR",
+    shortName: "Am",
+    notes: ["A3", "C4", "E4", "A4", "C5"]
+  },
+  {
+    name: "F MAJOR",
+    shortName: "F",
+    notes: ["F3", "A3", "C4", "F4", "A4"]
+  },
+  {
+    name: "G MAJOR",
+    shortName: "G",
+    notes: ["G3", "B3", "D4", "G4", "B4"]
+  }
+];
+
+
+/* =========================================================
    AUDIO INITIALIZATION
-------------------------- */
+========================================================= */
 
 function initializeAudio() {
   if (audioContext) {
@@ -133,179 +214,415 @@ function initializeAudio() {
     window.webkitAudioContext
   )();
 
-  masterGain = audioContext.createGain();
+  masterGainNode =
+    audioContext.createGain();
 
-  masterGain.gain.value =
+  masterGainNode.gain.value =
     Number(masterVolumeInput.value);
 
-  masterGain.connect(audioContext.destination);
+  /*
+    A short convolution reverb makes the sound warmer
+    and more similar to an instrument in a room.
+  */
+
+  reverbNode =
+    audioContext.createConvolver();
+
+  reverbNode.buffer =
+    createReverbImpulse(
+      audioContext,
+      1.6,
+      2.7
+    );
+
+  const dryGain =
+    audioContext.createGain();
+
+  const wetGain =
+    audioContext.createGain();
+
+  dryGain.gain.value = 0.88;
+  wetGain.gain.value = 0.22;
+
+  dryGain.connect(masterGainNode);
+  reverbNode.connect(wetGain);
+  wetGain.connect(masterGainNode);
+
+  masterGainNode.connect(
+    audioContext.destination
+  );
+
+  /*
+    Store these nodes so every guitar string can connect
+    to both the dry and reverberated outputs.
+  */
+
+  audioContext.guitarDryGain = dryGain;
+  audioContext.guitarReverb = reverbNode;
 
   soundStatusElement.textContent =
     "SOUND: READY";
 }
 
 
-/* -------------------------
-   SOUND CREATION
-------------------------- */
+/* =========================================================
+   REVERB IMPULSE
+========================================================= */
 
-function startZoneSound(
-  zoneName,
-  frequency,
-  oscillatorType = "sine"
+function createReverbImpulse(
+  context,
+  duration,
+  decay
+) {
+  const sampleRate = context.sampleRate;
+  const length = sampleRate * duration;
+
+  const impulse =
+    context.createBuffer(
+      2,
+      length,
+      sampleRate
+    );
+
+  for (
+    let channel = 0;
+    channel < impulse.numberOfChannels;
+    channel += 1
+  ) {
+    const data =
+      impulse.getChannelData(channel);
+
+    for (
+      let index = 0;
+      index < length;
+      index += 1
+    ) {
+      data[index] =
+        (Math.random() * 2 - 1) *
+        Math.pow(
+          1 - index / length,
+          decay
+        );
+    }
+  }
+
+  return impulse;
+}
+
+
+/* =========================================================
+   GUITAR STRING SYNTHESIS
+
+   Karplus-Strong style plucked-string synthesis.
+   Produces a much more natural sound than a basic oscillator.
+========================================================= */
+
+function playGuitarString(
+  noteName,
+  intensity = 0.65,
+  delay = 0
 ) {
   initializeAudio();
 
-  if (audioContext.state === "suspended") {
-    audioContext.resume();
-  }
+  const frequency =
+    NOTE_FREQUENCIES[noteName];
 
-  if (activeSounds.has(zoneName)) {
-    updateZoneFrequency(zoneName, frequency);
+  if (!frequency) {
     return;
   }
 
-  const oscillator =
-    audioContext.createOscillator();
+  if (
+    audioContext.state === "suspended"
+  ) {
+    audioContext.resume();
+  }
+
+  const startTime =
+    audioContext.currentTime + delay;
+
+  const duration = 2.4;
+
+  const frameCount =
+    Math.floor(
+      audioContext.sampleRate * duration
+    );
+
+  const buffer =
+    audioContext.createBuffer(
+      1,
+      frameCount,
+      audioContext.sampleRate
+    );
+
+  const data =
+    buffer.getChannelData(0);
+
+  /*
+    Short random-noise excitation simulates the initial
+    attack produced when a guitar string is plucked.
+  */
+
+  const period =
+    Math.max(
+      2,
+      Math.floor(
+        audioContext.sampleRate /
+        frequency
+      )
+    );
+
+  for (
+    let index = 0;
+    index < period;
+    index += 1
+  ) {
+    data[index] =
+      (Math.random() * 2 - 1) *
+      intensity;
+  }
+
+  /*
+    Feedback averaging creates the decaying vibration
+    of a plucked string.
+  */
+
+  const damping =
+    0.993 -
+    Math.min(
+      0.01,
+      frequency / 100000
+    );
+
+  for (
+    let index = period;
+    index < frameCount;
+    index += 1
+  ) {
+    const firstPrevious =
+      data[index - period];
+
+    const secondPrevious =
+      data[
+        Math.max(
+          0,
+          index - period + 1
+        )
+      ];
+
+    data[index] =
+      (
+        firstPrevious +
+        secondPrevious
+      ) *
+      0.5 *
+      damping;
+  }
+
+  const source =
+    audioContext.createBufferSource();
 
   const gainNode =
     audioContext.createGain();
 
-  const filterNode =
+  const bodyFilter =
     audioContext.createBiquadFilter();
 
-  oscillator.type = oscillatorType;
-  oscillator.frequency.value = frequency;
+  const brightnessFilter =
+    audioContext.createBiquadFilter();
 
-  filterNode.type = "lowpass";
-  filterNode.frequency.value = 1800;
-  filterNode.Q.value = 1.5;
+  source.buffer = buffer;
+
+  bodyFilter.type = "peaking";
+  bodyFilter.frequency.value = 230;
+  bodyFilter.Q.value = 1.2;
+  bodyFilter.gain.value = 4;
+
+  brightnessFilter.type = "lowpass";
+
+  brightnessFilter.frequency.value =
+    1700 +
+    intensity * 2800;
+
+  brightnessFilter.Q.value = 0.8;
 
   gainNode.gain.setValueAtTime(
-    0,
-    audioContext.currentTime
+    0.0001,
+    startTime
   );
 
-  gainNode.gain.linearRampToValueAtTime(
-    0.28,
-    audioContext.currentTime + 0.06
+  gainNode.gain.exponentialRampToValueAtTime(
+    0.22 + intensity * 0.25,
+    startTime + 0.012
   );
 
-  oscillator.connect(filterNode);
-  filterNode.connect(gainNode);
-  gainNode.connect(masterGain);
+  gainNode.gain.exponentialRampToValueAtTime(
+    0.0001,
+    startTime + duration
+  );
 
-  oscillator.start();
+  source.connect(bodyFilter);
+  bodyFilter.connect(brightnessFilter);
+  brightnessFilter.connect(gainNode);
 
-  activeSounds.set(zoneName, {
-    oscillator,
-    gainNode,
-    filterNode,
-    frequency
-  });
+  gainNode.connect(
+    audioContext.guitarDryGain
+  );
+
+  gainNode.connect(
+    audioContext.guitarReverb
+  );
+
+  source.start(startTime);
+  source.stop(startTime + duration);
+
+  activeSources.add(source);
+
+  source.addEventListener(
+    "ended",
+    () => {
+      activeSources.delete(source);
+
+      try {
+        source.disconnect();
+        bodyFilter.disconnect();
+        brightnessFilter.disconnect();
+        gainNode.disconnect();
+      } catch (error) {
+        console.warn(
+          "Audio cleanup warning:",
+          error
+        );
+      }
+    }
+  );
+}
+
+
+/* =========================================================
+   PLAY THE SELECTED CHORD
+========================================================= */
+
+function playSelectedChord(
+  movementSpeed = 0.7,
+  direction = "down"
+) {
+  const chord =
+    CHORDS[selectedChordIndex];
+
+  const notes =
+    direction === "up"
+      ? [...chord.notes].reverse()
+      : chord.notes;
+
+  const intensity =
+    Math.max(
+      0.35,
+      Math.min(1, movementSpeed)
+    );
+
+  /*
+    Small delays between the strings create a real
+    guitar-strumming effect.
+  */
+
+  const stringDelay =
+    0.022 +
+    (1 - intensity) * 0.018;
+
+  notes.forEach(
+    (noteName, index) => {
+      playGuitarString(
+        noteName,
+        intensity,
+        index * stringDelay
+      );
+    }
+  );
 
   soundStatusElement.textContent =
-    "SOUND: PLAYING";
+    `SOUND: ${chord.shortName} STRUM`;
+
+  createStrumParticles(
+    direction,
+    intensity
+  );
 }
 
 
-/* -------------------------
-   UPDATE FREQUENCY
-------------------------- */
+/* =========================================================
+   PLAY ONE MELODIC NOTE
+========================================================= */
 
-function updateZoneFrequency(zoneName, frequency) {
-  const sound = activeSounds.get(zoneName);
+function playMelodicNote(
+  normalizedY,
+  intensity
+) {
+  const melodyNotes = [
+    "C3",
+    "D3",
+    "E3",
+    "G3",
+    "A3",
+    "C4",
+    "D4",
+    "E4",
+    "G4",
+    "A4",
+    "C5",
+    "E5"
+  ];
 
-  if (!sound || !audioContext) {
-    return;
-  }
-
-  const now = audioContext.currentTime;
-
-  sound.oscillator.frequency.cancelScheduledValues(now);
-
-  sound.oscillator.frequency.linearRampToValueAtTime(
-    frequency,
-    now + 0.08
-  );
-
-  sound.filterNode.frequency.linearRampToValueAtTime(
-    Math.min(3200, frequency * 5),
-    now + 0.08
-  );
-
-  sound.frequency = frequency;
-}
-
-
-/* -------------------------
-   STOP ONE ZONE SOUND
-------------------------- */
-
-function stopZoneSound(zoneName) {
-  const sound = activeSounds.get(zoneName);
-
-  if (!sound || !audioContext) {
-    return;
-  }
-
-  const now = audioContext.currentTime;
-
-  sound.gainNode.gain.cancelScheduledValues(now);
-
-  sound.gainNode.gain.setValueAtTime(
+  const safeY =
     Math.max(
-      0.0001,
-      sound.gainNode.gain.value
-    ),
-    now
+      0,
+      Math.min(0.999, normalizedY)
+    );
+
+  const index =
+    Math.floor(
+      (1 - safeY) *
+      melodyNotes.length
+    );
+
+  const selectedNote =
+    melodyNotes[
+      Math.min(
+        index,
+        melodyNotes.length - 1
+      )
+    ];
+
+  playGuitarString(
+    selectedNote,
+    intensity,
+    0
   );
 
-  sound.gainNode.gain.exponentialRampToValueAtTime(
-    0.0001,
-    now + 0.1
-  );
+  rightFrequencyElement.textContent =
+    `Note: ${selectedNote}`;
 
-  window.setTimeout(() => {
-    try {
-      sound.oscillator.stop();
-    } catch (error) {
-      console.warn(
-        `${zoneName} oscillator already stopped`,
-        error
-      );
-    }
-
-    try {
-      sound.oscillator.disconnect();
-      sound.filterNode.disconnect();
-      sound.gainNode.disconnect();
-    } catch (error) {
-      console.warn(
-        `${zoneName} audio disconnection error`,
-        error
-      );
-    }
-  }, 130);
-
-  activeSounds.delete(zoneName);
-
-  if (activeSounds.size === 0) {
-    soundStatusElement.textContent =
-      "SOUND: SILENT";
-  }
+  soundStatusElement.textContent =
+    `SOUND: ${selectedNote}`;
 }
 
 
-/* -------------------------
-   STOP EVERYTHING
-------------------------- */
+/* =========================================================
+   STOP ALL GUITAR SOUNDS
+========================================================= */
 
 function stopAllSounds() {
-  const zoneNames =
-    Array.from(activeSounds.keys());
+  for (const source of activeSources) {
+    try {
+      source.stop();
+    } catch (error) {
+      console.warn(
+        "Audio source already stopped",
+        error
+      );
+    }
+  }
 
-  zoneNames.forEach(stopZoneSound);
+  activeSources.clear();
 
   leftHandInside = false;
   rightHandInside = false;
@@ -313,38 +630,209 @@ function stopAllSounds() {
   leftHandEnergy = 0;
   rightHandEnergy = 0;
 
+  lastRightHandPosition = null;
+  lastRightHandTime = 0;
+
+  leftFrequencyElement.textContent =
+    CHORDS[selectedChordIndex].name;
+
+  rightFrequencyElement.textContent =
+    "Move to play";
+
+  soundStatusElement.textContent =
+    "SOUND: SILENT";
+
   updateZoneInterface();
 }
 
 
-/* -------------------------
-   FREQUENCY CALCULATION
-------------------------- */
+/* =========================================================
+   LEFT HAND CHORD SELECTION
+========================================================= */
 
-function calculateFrequency(
-  normalizedY,
-  minFrequency,
-  maxFrequency
-) {
-  const clampedY = Math.max(
-    0,
-    Math.min(1, normalizedY)
-  );
+function chooseChordFromLeftHand(point) {
+  if (!point) {
+    return;
+  }
 
-  const invertedY = 1 - clampedY;
+  const relativeY =
+    (
+      point.y -
+      LEFT_ZONE.yMin
+    ) /
+    (
+      LEFT_ZONE.yMax -
+      LEFT_ZONE.yMin
+    );
 
-  return (
-    minFrequency +
-    invertedY * (
-      maxFrequency - minFrequency
-    )
-  );
+  const safeY =
+    Math.max(
+      0,
+      Math.min(0.999, relativeY)
+    );
+
+  const nextIndex =
+    Math.floor(
+      safeY * CHORDS.length
+    );
+
+  if (
+    nextIndex !== selectedChordIndex
+  ) {
+    selectedChordIndex =
+      nextIndex;
+
+    const chord =
+      CHORDS[selectedChordIndex];
+
+    leftFrequencyElement.textContent =
+      chord.name;
+
+    leftNoteElement.textContent =
+      chord.shortName;
+
+    /*
+      A short preview note confirms the selected chord.
+    */
+
+    playGuitarString(
+      chord.notes[0],
+      0.38,
+      0
+    );
+
+    createParticles(
+      point.screenX,
+      point.screenY,
+      "#61e8ff",
+      12
+    );
+  }
 }
 
 
-/* -------------------------
-   CANVAS SIZE
-------------------------- */
+/* =========================================================
+   RIGHT HAND PERFORMANCE
+========================================================= */
+
+function processRightHandMusic(point) {
+  if (!point) {
+    lastRightHandPosition = null;
+    lastRightHandTime = 0;
+    return;
+  }
+
+  const now = performance.now();
+
+  if (
+    !lastRightHandPosition ||
+    !lastRightHandTime
+  ) {
+    lastRightHandPosition = {
+      x: point.x,
+      y: point.y
+    };
+
+    lastRightHandTime = now;
+    return;
+  }
+
+  const deltaX =
+    point.x -
+    lastRightHandPosition.x;
+
+  const deltaY =
+    point.y -
+    lastRightHandPosition.y;
+
+  const distance =
+    Math.hypot(deltaX, deltaY);
+
+  const elapsed =
+    Math.max(
+      16,
+      now - lastRightHandTime
+    );
+
+  const speed =
+    distance / elapsed * 1000;
+
+  const direction =
+    deltaY > 0
+      ? "down"
+      : "up";
+
+  /*
+    Fast movements produce chord strums.
+  */
+
+  if (
+    speed >= STRUM_MINIMUM_SPEED &&
+    now - lastStrumAt >= STRUM_COOLDOWN
+  ) {
+    const intensity =
+      Math.max(
+        0.35,
+        Math.min(1, speed * 0.75)
+      );
+
+    playSelectedChord(
+      intensity,
+      direction
+    );
+
+    lastStrumAt = now;
+  }
+
+  /*
+    Slower controlled vertical movement produces
+    individual melodic guitar notes.
+  */
+
+  if (
+    speed > 0.10 &&
+    speed < STRUM_MINIMUM_SPEED &&
+    now - lastStrumAt >= 170
+  ) {
+    playMelodicNote(
+      point.y,
+      Math.max(
+        0.32,
+        Math.min(0.72, speed)
+      )
+    );
+
+    lastStrumAt = now;
+  }
+
+  rightHandEnergy =
+    Math.min(
+      100,
+      speed * 125
+    );
+
+  createParticles(
+    point.screenX,
+    point.screenY,
+    "#ff4ea3",
+    Math.max(
+      2,
+      Math.floor(speed * 12)
+    )
+  );
+
+  lastRightHandPosition = {
+    x: point.x,
+    y: point.y
+  };
+
+  lastRightHandTime = now;
+}
+
+
+/* =========================================================
+   CANVAS SIZING
+========================================================= */
 
 function resizeCanvases() {
   const pixelRatio =
@@ -353,37 +841,39 @@ function resizeCanvases() {
       2
     );
 
-  [handCanvas, effectsCanvas].forEach((canvas) => {
-    canvas.width =
-      window.innerWidth * pixelRatio;
+  [handCanvas, effectsCanvas].forEach(
+    (canvas) => {
+      canvas.width =
+        window.innerWidth * pixelRatio;
 
-    canvas.height =
-      window.innerHeight * pixelRatio;
+      canvas.height =
+        window.innerHeight * pixelRatio;
 
-    canvas.style.width =
-      `${window.innerWidth}px`;
+      canvas.style.width =
+        `${window.innerWidth}px`;
 
-    canvas.style.height =
-      `${window.innerHeight}px`;
+      canvas.style.height =
+        `${window.innerHeight}px`;
 
-    const context =
-      canvas.getContext("2d");
+      const context =
+        canvas.getContext("2d");
 
-    context.setTransform(
-      pixelRatio,
-      0,
-      0,
-      pixelRatio,
-      0,
-      0
-    );
-  });
+      context.setTransform(
+        pixelRatio,
+        0,
+        0,
+        pixelRatio,
+        0,
+        0
+      );
+    }
+  );
 }
 
 
-/* -------------------------
-   PARTICLES
-------------------------- */
+/* =========================================================
+   PARTICLE EFFECTS
+========================================================= */
 
 function createParticles(
   x,
@@ -391,16 +881,20 @@ function createParticles(
   color,
   amount = 7
 ) {
-  for (let index = 0; index < amount; index += 1) {
+  for (
+    let index = 0;
+    index < amount;
+    index += 1
+  ) {
     particles.push({
       x,
       y,
 
       velocityX:
-        (Math.random() - 0.5) * 4,
+        (Math.random() - 0.5) * 5,
 
       velocityY:
-        (Math.random() - 0.5) * 4,
+        (Math.random() - 0.5) * 5,
 
       life: 1,
 
@@ -411,22 +905,41 @@ function createParticles(
     });
   }
 
-  if (particles.length > 500) {
+  if (particles.length > 550) {
     particles.splice(
       0,
-      particles.length - 500
+      particles.length - 550
     );
   }
 }
 
 
-/* -------------------------
-   PARTICLE ANIMATION
-------------------------- */
+function createStrumParticles(
+  direction,
+  intensity
+) {
+  const x =
+    window.innerWidth * 0.72;
+
+  const y =
+    direction === "down"
+      ? window.innerHeight * 0.38
+      : window.innerHeight * 0.67;
+
+  createParticles(
+    x,
+    y,
+    "#ffd36d",
+    Math.floor(
+      14 + intensity * 26
+    )
+  );
+}
+
 
 function animateParticles() {
   effectsContext.fillStyle =
-    "rgba(2, 4, 10, 0.13)";
+    "rgba(2, 4, 10, 0.14)";
 
   effectsContext.fillRect(
     0,
@@ -442,7 +955,7 @@ function animateParticles() {
     particle.velocityX *= 0.98;
     particle.velocityY *= 0.98;
 
-    particle.life -= 0.018;
+    particle.life -= 0.019;
 
     effectsContext.globalAlpha =
       Math.max(0, particle.life);
@@ -450,7 +963,7 @@ function animateParticles() {
     effectsContext.fillStyle =
       particle.color;
 
-    effectsContext.shadowBlur = 14;
+    effectsContext.shadowBlur = 15;
     effectsContext.shadowColor =
       particle.color;
 
@@ -481,15 +994,15 @@ function animateParticles() {
   }
 
   animationFrameId =
-    window.requestAnimationFrame(
+    requestAnimationFrame(
       animateParticles
     );
 }
 
 
-/* -------------------------
-   CHECK POINT IN ZONE
-------------------------- */
+/* =========================================================
+   POINT AND ZONE UTILITIES
+========================================================= */
 
 function pointIsInsideZone(point, zone) {
   if (!point) {
@@ -505,13 +1018,8 @@ function pointIsInsideZone(point, zone) {
 }
 
 
-/* -------------------------
-   LANDMARK COORDINATES
-------------------------- */
-
 function convertLandmarkToScreen(landmark) {
   return {
-    /* Video is mirrored */
     x: 1 - landmark.x,
     y: landmark.y,
 
@@ -526,9 +1034,9 @@ function convertLandmarkToScreen(landmark) {
 }
 
 
-/* -------------------------
-   DRAW HAND LANDMARKS
-------------------------- */
+/* =========================================================
+   HAND DRAWING
+========================================================= */
 
 function drawDetectedHand(
   landmarks,
@@ -573,7 +1081,12 @@ function drawDetectedHand(
   handContext.shadowBlur = 12;
   handContext.shadowColor = color;
 
-  for (const [firstIndex, secondIndex] of connections) {
+  for (
+    const [
+      firstIndex,
+      secondIndex
+    ] of connections
+  ) {
     const first =
       convertLandmarkToScreen(
         landmarks[firstIndex]
@@ -601,7 +1114,9 @@ function drawDetectedHand(
 
   for (const landmark of landmarks) {
     const point =
-      convertLandmarkToScreen(landmark);
+      convertLandmarkToScreen(
+        landmark
+      );
 
     handContext.beginPath();
 
@@ -620,48 +1135,15 @@ function drawDetectedHand(
 }
 
 
-/* -------------------------
-   PROCESS LEFT OR RIGHT HAND
-------------------------- */
-
-function processHand(
-  landmarks,
-  handLabel
-) {
-  /*
-    Landmark 9 is near the center
-    of the palm.
-  */
-  const palmPoint =
-    convertLandmarkToScreen(
-      landmarks[9]
-    );
-
-  if (handLabel === "Left") {
-    lastLeftPoint = palmPoint;
-  } else {
-    lastRightPoint = palmPoint;
-  }
-
-  return palmPoint;
-}
-
-
-/* -------------------------
-   UPDATE SOUNDS AND ZONES
-------------------------- */
+/* =========================================================
+   UPDATE HAND ZONES
+========================================================= */
 
 function updateHandZones(
   leftPoint,
   rightPoint
 ) {
-  /*
-    Because the camera image is mirrored,
-    the visual left and right zones are
-    based on the final screen coordinates.
-  */
-
-  const newLeftHandInside =
+  const leftPointInChordZone =
     pointIsInsideZone(
       leftPoint,
       LEFT_ZONE
@@ -671,7 +1153,7 @@ function updateHandZones(
       LEFT_ZONE
     );
 
-  const newRightHandInside =
+  const rightPointInPlayZone =
     pointIsInsideZone(
       rightPoint,
       RIGHT_ZONE
@@ -682,9 +1164,9 @@ function updateHandZones(
     );
 
 
-  /* LEFT ZONE */
+  /* LEFT HAND CHORD ZONE */
 
-  if (newLeftHandInside) {
+  if (leftPointInChordZone) {
     const activePoint =
       pointIsInsideZone(
         leftPoint,
@@ -693,60 +1175,38 @@ function updateHandZones(
         ? leftPoint
         : rightPoint;
 
-    const leftFrequency =
-      calculateFrequency(
-        activePoint.y,
-        90,
-        280
-      );
-
-    if (!leftHandInside) {
-      startZoneSound(
-        "left",
-        leftFrequency,
-        "sawtooth"
-      );
-    } else {
-      updateZoneFrequency(
-        "left",
-        leftFrequency
-      );
-    }
+    chooseChordFromLeftHand(
+      activePoint
+    );
 
     leftHandEnergy =
       Math.min(
         100,
-        leftHandEnergy + 8
+        leftHandEnergy + 10
       );
 
-    leftFrequencyElement.textContent =
-      `${Math.round(leftFrequency)} Hz`;
+    leftHandInside = true;
 
     createParticles(
       activePoint.screenX,
       activePoint.screenY,
       "#61e8ff",
-      3
+      2
     );
   } else {
-    if (leftHandInside) {
-      stopZoneSound("left");
-    }
+    leftHandInside = false;
 
     leftHandEnergy =
       Math.max(
         0,
-        leftHandEnergy - 12
+        leftHandEnergy - 14
       );
-
-    leftFrequencyElement.textContent =
-      "Waiting for hand";
   }
 
 
-  /* RIGHT ZONE */
+  /* RIGHT HAND PERFORMANCE ZONE */
 
-  if (newRightHandInside) {
+  if (rightPointInPlayZone) {
     const activePoint =
       pointIsInsideZone(
         rightPoint,
@@ -755,70 +1215,41 @@ function updateHandZones(
         ? rightPoint
         : leftPoint;
 
-    const rightFrequency =
-      calculateFrequency(
-        activePoint.y,
-        280,
-        880
-      );
+    rightHandInside = true;
 
-    if (!rightHandInside) {
-      startZoneSound(
-        "right",
-        rightFrequency,
-        "triangle"
-      );
-    } else {
-      updateZoneFrequency(
-        "right",
-        rightFrequency
-      );
-    }
-
-    rightHandEnergy =
-      Math.min(
-        100,
-        rightHandEnergy + 8
-      );
-
-    rightFrequencyElement.textContent =
-      `${Math.round(rightFrequency)} Hz`;
-
-    createParticles(
-      activePoint.screenX,
-      activePoint.screenY,
-      "#ff4ea3",
-      3
+    processRightHandMusic(
+      activePoint
     );
   } else {
-    if (rightHandInside) {
-      stopZoneSound("right");
-    }
+    rightHandInside = false;
+
+    processRightHandMusic(null);
 
     rightHandEnergy =
       Math.max(
         0,
-        rightHandEnergy - 12
+        rightHandEnergy - 18
       );
 
     rightFrequencyElement.textContent =
-      "Waiting for hand";
+      "Move to play";
+
+    /*
+      The currently ringing notes are allowed to decay
+      naturally like guitar strings.
+
+      stopAllSounds() is used when ALL hands disappear,
+      the window loses focus or the Stop button is clicked.
+    */
   }
-
-
-  leftHandInside =
-    newLeftHandInside;
-
-  rightHandInside =
-    newRightHandInside;
 
   updateZoneInterface();
 }
 
 
-/* -------------------------
+/* =========================================================
    ZONE INTERFACE
-------------------------- */
+========================================================= */
 
 function updateZoneInterface() {
   leftZoneElement.classList.toggle(
@@ -837,37 +1268,40 @@ function updateZoneInterface() {
   rightEnergyElement.style.width =
     `${rightHandEnergy}%`;
 
-  if (leftHandInside && rightHandInside) {
+  if (
+    leftHandInside &&
+    rightHandInside
+  ) {
     mainMessageElement.textContent =
-      "Both hands are creating the opera";
+      "Chord selected. Right hand is performing.";
 
     subMessageElement.textContent =
-      "Move vertically to change both musical pitches";
+      "Move quickly to strum or slowly to play notes";
   } else if (leftHandInside) {
     mainMessageElement.textContent =
-      "Left-hand bass is active";
+      "Choose a chord with the left hand";
 
     subMessageElement.textContent =
-      "Move the hand vertically to change the pitch";
+      "Move vertically between C, Am, F and G";
   } else if (rightHandInside) {
     mainMessageElement.textContent =
-      "Right-hand lead is active";
+      "The right hand is playing the guitar";
 
     subMessageElement.textContent =
-      "Move the hand vertically to change the pitch";
+      "Speed controls intensity and height controls pitch";
   } else {
     mainMessageElement.textContent =
-      "Place both hands inside the two zones";
+      "Place the left hand in the chord zone";
 
     subMessageElement.textContent =
-      "The sound stops when your hand leaves its zone";
+      "Then move the right hand inside the performance zone";
   }
 }
 
 
-/* -------------------------
-   MEDIAPIPE CALLBACK
-------------------------- */
+/* =========================================================
+   MEDIAPIPE RESULTS
+========================================================= */
 
 function onMediaPipeResults(results) {
   handContext.clearRect(
@@ -891,18 +1325,10 @@ function onMediaPipeResults(results) {
       performance.now() -
       lastHandDetectedAt;
 
-    /*
-      Stop after a small tolerance.
-      This prevents unstable sound cuts
-      when one camera frame is missed.
-    */
     if (
       timeWithoutHands >
       HAND_LOST_DELAY
     ) {
-      lastLeftPoint = null;
-      lastRightPoint = null;
-
       stopAllSounds();
     }
 
@@ -941,10 +1367,13 @@ function onMediaPipeResults(results) {
         color
       );
 
+      /*
+        Landmark 9 represents a central palm point.
+      */
+
       const palmPoint =
-        processHand(
-          landmarks,
-          label
+        convertLandmarkToScreen(
+          landmarks[9]
         );
 
       if (label === "Left") {
@@ -964,9 +1393,9 @@ function onMediaPipeResults(results) {
 }
 
 
-/* -------------------------
-   INITIALIZE MEDIAPIPE
-------------------------- */
+/* =========================================================
+   MEDIAPIPE INITIALIZATION
+========================================================= */
 
 function initializeMediaPipe() {
   if (typeof Hands === "undefined") {
@@ -1001,9 +1430,9 @@ function initializeMediaPipe() {
 }
 
 
-/* -------------------------
-   START CAMERA
-------------------------- */
+/* =========================================================
+   CAMERA START
+========================================================= */
 
 async function startCamera() {
   startButton.disabled = true;
@@ -1042,8 +1471,13 @@ async function startCamera() {
 
     await camera.start();
 
-    startScreen.classList.add("hidden");
-    experience.classList.remove("hidden");
+    startScreen.classList.add(
+      "hidden"
+    );
+
+    experience.classList.remove(
+      "hidden"
+    );
 
     cameraStatusElement.textContent =
       "CAMERA: ACTIVE";
@@ -1079,9 +1513,9 @@ async function startCamera() {
 }
 
 
-/* -------------------------
-   RESTART CAMERA
-------------------------- */
+/* =========================================================
+   CAMERA RESTART
+========================================================= */
 
 async function restartCamera() {
   stopAllSounds();
@@ -1144,9 +1578,9 @@ async function restartCamera() {
 }
 
 
-/* -------------------------
-   ERROR MESSAGE
-------------------------- */
+/* =========================================================
+   ERROR DISPLAY
+========================================================= */
 
 function showError(message) {
   errorMessageElement.textContent =
@@ -1164,24 +1598,26 @@ function showError(message) {
 }
 
 
-/* -------------------------
-   VOLUME CONTROL
-------------------------- */
+/* =========================================================
+   VOLUME
+========================================================= */
 
 masterVolumeInput.addEventListener(
   "input",
   () => {
     const volume =
-      Number(masterVolumeInput.value);
+      Number(
+        masterVolumeInput.value
+      );
 
     volumeValueElement.textContent =
       `${Math.round(volume * 200)}%`;
 
     if (
-      masterGain &&
+      masterGainNode &&
       audioContext
     ) {
-      masterGain.gain.linearRampToValueAtTime(
+      masterGainNode.gain.linearRampToValueAtTime(
         volume,
         audioContext.currentTime + 0.05
       );
@@ -1190,9 +1626,9 @@ masterVolumeInput.addEventListener(
 );
 
 
-/* -------------------------
+/* =========================================================
    BUTTON EVENTS
-------------------------- */
+========================================================= */
 
 startButton.addEventListener(
   "click",
@@ -1227,9 +1663,9 @@ fullscreenButton.addEventListener(
 );
 
 
-/* -------------------------
-   GLOBAL SAFETY EVENTS
-------------------------- */
+/* =========================================================
+   SAFETY EVENTS
+========================================================= */
 
 document.addEventListener(
   "visibilitychange",
@@ -1256,9 +1692,21 @@ window.addEventListener(
 );
 
 
-/* -------------------------
-   INITIAL UI
-------------------------- */
+/* =========================================================
+   INITIAL INTERFACE
+========================================================= */
+
+leftNoteElement.textContent =
+  CHORDS[selectedChordIndex].shortName;
+
+leftFrequencyElement.textContent =
+  CHORDS[selectedChordIndex].name;
+
+rightNoteElement.textContent =
+  "GUITAR";
+
+rightFrequencyElement.textContent =
+  "Move to play";
 
 updateZoneInterface();
 resizeCanvases();
